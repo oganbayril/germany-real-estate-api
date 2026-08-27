@@ -1,0 +1,8 @@
+# Normalize all text files to LF in the repo (deploy target is Linux).
+* text=auto eol=lf
+
+# Explicit binaries
+*.png binary
+*.jpg binary
+*.joblib binary
+*.sqlite binary

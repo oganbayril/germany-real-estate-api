@@ -42,21 +42,28 @@ def test_discover_filters_to_target_cities(source: ImmoweltSource) -> None:
 
 
 def test_discover_respects_per_city_cap() -> None:
-    src = ImmoweltSource(cities=["berlin"], max_search_urls_per_city=2)
-    index = "<sitemapindex><sitemap><loc>https://www.immowelt.de/sitemaps/BUY_APARTMENT_X/x_1.xml</loc></sitemap></sitemapindex>"
-    sub = (
-        "<urlset>"
-        + "".join(
-            f"<url><loc>https://www.immowelt.de/suche/kaufen/wohnung/berlin-10115/q{i}-1000{i}/nbh{i}</loc></url>"
-            for i in range(5)
-        )
-        + "</urlset>"
+    src = ImmoweltSource(cities=["berlin"], max_search_urls_per_city=3)
+    subs = [f"https://www.immowelt.de/sitemaps/BUY_APARTMENT_{n}/s_1.xml" for n in range(5)]
+    index = (
+        "<sitemapindex>"
+        + "".join(f"<sitemap><loc>{s}</loc></sitemap>" for s in subs)
+        + "</sitemapindex>"
     )
-    pages = {
-        "https://www.immowelt.de/sitemaps/sitemap_index.xml": index,
-        "https://www.immowelt.de/sitemaps/BUY_APARTMENT_X/x_1.xml": sub,
-    }
-    assert len(list(src.discover(lambda u: pages[u]))) == 2
+    pages = {"https://www.immowelt.de/sitemaps/sitemap_index.xml": index}
+    for j, s in enumerate(subs):
+        pages[s] = (
+            "<urlset>"
+            + "".join(
+                f"<url><loc>https://www.immowelt.de/suche/kaufen/wohnung/berlin-10115/q{j}{i}-1000{i}/nbh{j}{i}</loc></url>"
+                for i in range(4)
+            )
+            + "</urlset>"
+        )
+
+    tasks = list(src.discover(lambda u: pages[u]))
+    assert len(tasks) == 3  # cap honoured
+    # quota is 1/sitemap (3 // 8 -> 1), so the 3 come from 3 different sub-sitemaps
+    assert len({t.url.split("/nbh")[1][0] for t in tasks}) == 3
 
 
 # -- listing cards ------------------------------------------------------

@@ -14,8 +14,9 @@ wheels/
 .env.*
 !.env.example
 
-# Project data (scraped data, DB dumps, scratch)
-data/
+# Project data (scraped data, DB dumps, scratch) -- root-anchored so it does
+# not swallow the src/realestate/data package
+/data/
 *.sqlite
 *.sqlite3
 *.db
@@ -23,7 +24,7 @@ data/
 *.sql.gz
 
 # Trained model artifacts
-models/
+/models/
 
 # Test / tooling caches
 .pytest_cache/

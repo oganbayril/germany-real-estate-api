@@ -19,7 +19,7 @@ Phases 0-1 complete. See phases below.
 | 0 | Package layout, tooling, config | done |
 | 1 | Schema, SQLAlchemy models, Alembic, upsert repository | done |
 | 2 | Immowelt scraper (sitemap discovery, rate-limited, robots-aware) | done |
-| 3 | Cleaning + feature engineering | todo |
+| 3 | Cleaning + feature engineering | done |
 | 4 | XGBoost training + eval + artifact registry | todo |
 | 5 | FastAPI serving (`/predict`, `/health`, `/stats`) | todo |
 | 6 | systemd deployment units + runbook | todo |
@@ -72,6 +72,19 @@ Only search-results pages are fetched, not per-listing detail pages: Immowelt (a
 ImmoScout24) guard detail pages with DataDome. Everything stored comes from the
 results cards — price, area, rooms, floor, district, postal code, energy class.
 `scraper/immoscout.py` is a dormant placeholder (IS24 blocks plain HTTP entirely).
+
+## Feature pipeline
+
+`data/clean.py` loads listings and drops the unmodellable (no price / no area),
+clips outliers (price, area, €/m², rooms, floor), and de-dupes relistings.
+
+`data/features.py` is a **pure transform** — no fitting, no DB — so training and
+the prediction API run identical feature code. It produces a fixed column
+contract (`FEATURE_COLUMNS`): numeric (`living_area_sqm`, `rooms`, `floor`,
+`area_per_room`, `energy_class_ordinal`), missing-value flags, and category-dtype
+columns (`city`, `district`, `postal_prefix`). Target is `price_log = ln(price)`;
+`target_to_price` inverts it. Categorical encoding + model fitting live in
+`realestate.model` (Phase 4).
 
 ## Layout
 

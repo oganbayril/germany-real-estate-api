@@ -56,6 +56,13 @@ class ImmoweltSource:
 
     # -- discovery ----------------------------------------------------------
     def discover(self, fetch: Fetcher) -> Iterator[SearchTask]:
+        """Yield search URLs, spread across the filter slices the sitemaps expose.
+
+        Each buy/apartment sub-sitemap is a *filtered* set (by room count, price
+        band, "with cellar", new-build, ...). Draining them in order would
+        over-sample the first filter, so we take only a small quota per city from
+        each sub-sitemap before moving on.
+        """
         wanted = {CITY_TO_IMMOWELT[c] for c in self.cities}
         try:
             index_xml = fetch(SITEMAP_INDEX)
@@ -66,27 +73,35 @@ class ImmoweltSource:
         sub_sitemaps = [
             loc for loc in _LOC_RE.findall(index_xml) if "_APARTMENT_" in loc and "RENT" not in loc
         ]
-        log.info("scanning %d buy/apartment sub-sitemaps", len(sub_sitemaps))
+        cap = self.max_search_urls_per_city
+        quota = max(1, cap // 8)  # spread each city's cap over >= 8 sub-sitemaps
+        log.info(
+            "scanning %d buy/apartment sub-sitemaps (quota %d/city each)",
+            len(sub_sitemaps),
+            quota,
+        )
 
         per_city = dict.fromkeys(wanted, 0)
         seen: set[str] = set()
         for sub_url in sub_sitemaps:
-            if all(n >= self.max_search_urls_per_city for n in per_city.values()):
+            if all(n >= cap for n in per_city.values()):
                 break
             try:
                 sub_xml = fetch(sub_url)
             except Exception as exc:  # noqa: BLE001
                 log.warning("skipping sub-sitemap %s: %s", sub_url, exc)
                 continue
+            taken = dict.fromkeys(wanted, 0)
             for url in _LOC_RE.findall(sub_xml):
                 match = _CITY_SEG_RE.search(url)
                 if not match or url in seen:
                     continue
                 slug = match.group(1)
-                if slug not in wanted or per_city[slug] >= self.max_search_urls_per_city:
+                if slug not in wanted or per_city[slug] >= cap or taken[slug] >= quota:
                     continue
                 seen.add(url)
                 per_city[slug] += 1
+                taken[slug] += 1
                 yield SearchTask(url=url, city=_IMMOWELT_TO_CITY[slug])
 
     # -- parsing ----------------------------------------------------------

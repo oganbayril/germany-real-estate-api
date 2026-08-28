@@ -30,9 +30,9 @@ class Settings(BaseSettings):
     scrape_cities: Annotated[list[str], NoDecode] = Field(
         default=["berlin", "muenchen", "hamburg", "koeln", "leipzig"]
     )
-    scrape_delay_min_s: float = 5.0
-    scrape_delay_max_s: float = 10.0
-    scrape_max_pages_per_city: int = 5
+    scrape_delay_min_s: float = 8.0
+    scrape_delay_max_s: float = 15.0
+    scrape_max_search_urls_per_city: int = 40
     scrape_user_agent: str = (
         "germany-real-estate-api/0.1 (personal portfolio project; "
         "non-commercial; contact: oganby@gmail.com)"

@@ -3,7 +3,7 @@
 A German real-estate price predictor, end to end:
 
 ```
-ImmoScout24 scraper  ->  Postgres  ->  feature pipeline  ->  XGBoost model  ->  FastAPI
+Immowelt scraper  ->  Postgres  ->  feature pipeline  ->  XGBoost model  ->  FastAPI
 ```
 
 Portfolio project demonstrating a full ML deployment: periodic data collection,
@@ -18,7 +18,7 @@ Phases 0-1 complete. See phases below.
 |------|-------|-------|
 | 0 | Package layout, tooling, config | done |
 | 1 | Schema, SQLAlchemy models, Alembic, upsert repository | done |
-| 2 | ImmoScout24 scraper (rate-limited, robots-aware) | todo |
+| 2 | Immowelt scraper (sitemap discovery, rate-limited, robots-aware) | done |
 | 3 | Cleaning + feature engineering | todo |
 | 4 | XGBoost training + eval + artifact registry | todo |
 | 5 | FastAPI serving (`/predict`, `/health`, `/stats`) | todo |
@@ -40,7 +40,9 @@ uv run ruff format .          # format
 uv run alembic upgrade head        # create / migrate the database
 uv run alembic revision --autogenerate -m "..."   # after changing models
 
-uv run realestate-scrape --help
+uv run realestate-scrape run --cities berlin --max-searches 5   # scrape
+uv run realestate-scrape run --dry-run                          # fetch + parse, no writes
+uv run realestate-scrape fetch-fixture <url>                    # save HTML for a parser test
 uv run realestate-train --help
 uv run uvicorn realestate.api.main:app --reload
 ```
@@ -59,10 +61,17 @@ supplied by `realestate.config` (env `RE_DATABASE_URL`), not `alembic.ini`.
 ## Scraping policy
 
 The scraper is the primary data source, run periodically via a systemd timer.
-It is deliberately low-volume and non-evasive: single-threaded, 5-10s jittered
+It is deliberately low-volume and non-evasive: single-threaded, ~8-15s jittered
 delay, honest descriptive User-Agent, respects `robots.txt`, scoped to ~5 cities,
-no proxy rotation or stealth. Raw scraped data and DB dumps are never committed;
-the repo ships code plus a small sanitized sample fixture only.
+no proxy rotation or browser emulation. Listing URLs come from Immowelt's own
+published XML sitemaps rather than from reverse-engineering its internal API.
+Raw scraped data and DB dumps are never committed; the repo ships code plus a
+small sanitized sample fixture only.
+
+Only search-results pages are fetched, not per-listing detail pages: Immowelt (and
+ImmoScout24) guard detail pages with DataDome. Everything stored comes from the
+results cards — price, area, rooms, floor, district, postal code, energy class.
+`scraper/immoscout.py` is a dormant placeholder (IS24 blocks plain HTTP entirely).
 
 ## Layout
 
@@ -74,7 +83,7 @@ src/realestate/
   data/          cleaning + feature engineering (shared by training and API)
   model/         training, prediction, artifact registry
   api/           FastAPI app + schemas
-tests/           pytest; parser tests run against tests/fixtures/
+tests/           pytest; parser tests run against tests/fixtures/immowelt/
 sample/          sanitized CSV sample (committed)
 deploy/          systemd units + runbook
 ```

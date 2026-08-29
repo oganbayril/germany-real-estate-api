@@ -20,7 +20,7 @@ Phases 0-1 complete. See phases below.
 | 1 | Schema, SQLAlchemy models, Alembic, upsert repository | done |
 | 2 | Immowelt scraper (sitemap discovery, rate-limited, robots-aware) | done |
 | 3 | Cleaning + feature engineering | done |
-| 4 | XGBoost training + eval + artifact registry | todo |
+| 4 | XGBoost training + eval + artifact registry | done |
 | 5 | FastAPI serving (`/predict`, `/health`, `/stats`) | todo |
 | 6 | systemd deployment units + runbook | todo |
 | 7 | CI, architecture diagram, sample fixture | todo |
@@ -83,8 +83,26 @@ the prediction API run identical feature code. It produces a fixed column
 contract (`FEATURE_COLUMNS`): numeric (`living_area_sqm`, `rooms`, `floor`,
 `area_per_room`, `energy_class_ordinal`), missing-value flags, and category-dtype
 columns (`city`, `district`, `postal_prefix`). Target is `price_log = ln(price)`;
-`target_to_price` inverts it. Categorical encoding + model fitting live in
-`realestate.model` (Phase 4).
+`target_to_price` inverts it. ## Model
+
+`realestate-train` loads listings (or `--from-sample`), cleans, builds features,
+and fits an sklearn `Pipeline`: `OrdinalEncoder` on the categorical location
+columns (ordinal, not one-hot — cardinality is high and XGBoost splits ordinal
+codes fine) → `XGBRegressor` on `price_log`. XGBoost handles NaNs natively, so
+there is no imputation step.
+
+Metrics are reported in euros (predictions exponentiated back from log): 5-fold
+out-of-fold CV on the train split, plus a held-out test split. The saved artifact
+is refit on every row.
+
+`model/registry.py` versions artifacts under `models/<UTC-timestamp>/`
+(`model.joblib` + `metrics.json` + `metadata.json`), with a `latest.txt` pointer.
+`model/predict.py`'s `PricePredictor` loads the latest and scores a listing
+through the same `build_feature_frame`.
+
+Current model (≈560 Berlin/Leipzig/Hamburg listings, card-only features):
+holdout median error ≈20%, R²(log) ≈0.82. Thin by design — more data from the
+scheduled scraper and light tuning are the obvious next gains.
 
 ## Layout
 

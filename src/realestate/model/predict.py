@@ -39,6 +39,10 @@ class PricePredictor:
     def metrics(self) -> dict:
         return self._artifact.metrics
 
+    @property
+    def metadata(self) -> dict:
+        return self._artifact.metadata
+
     def predict_prices(self, df: pd.DataFrame) -> np.ndarray:
         feats = build_feature_frame(df)[FEATURE_COLUMNS]
         return target_to_price(self._artifact.pipeline.predict(feats))

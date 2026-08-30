@@ -62,7 +62,7 @@ def build_feature_frame(df: pd.DataFrame) -> pd.DataFrame:
 
     out["city"] = _as_category(df.get("city"), df.index)
     out["district"] = _as_category(df.get("district"), df.index)
-    out["quarter"] = _as_category(_quarter(df.get("address"), df.index), df.index)
+    out["quarter"] = _as_category(_resolve_quarter(df), df.index)
     out["postal_prefix"] = _as_category(_postal_prefix(df.get("postal_code"), df.index), df.index)
 
     if "price_eur" in df.columns:
@@ -93,6 +93,16 @@ def _postal_prefix(series: pd.Series | None, index: pd.Index) -> pd.Series:
     if series is None:
         return pd.Series(index=index, dtype="object")
     return series.astype("string").str.replace(r"\D", "", regex=True).str[:3].replace("", pd.NA)
+
+
+def _resolve_quarter(df: pd.DataFrame) -> pd.Series:
+    """Use an explicit ``quarter`` column when given one (the API path); otherwise
+    parse it out of ``address`` (the training path)."""
+    parsed = _quarter(df.get("address"), df.index)
+    if "quarter" in df.columns:
+        explicit = df["quarter"].astype("object")
+        return explicit.where(explicit.notna() & (explicit != ""), parsed)
+    return parsed
 
 
 def _quarter(series: pd.Series | None, index: pd.Index) -> pd.Series:

@@ -21,7 +21,7 @@ Phases 0-1 complete. See phases below.
 | 2 | Immowelt scraper (sitemap discovery, rate-limited, robots-aware) | done |
 | 3 | Cleaning + feature engineering | done |
 | 4 | XGBoost training + eval + artifact registry | done |
-| 5 | FastAPI serving (`/predict`, `/health`, `/stats`) | todo |
+| 5 | FastAPI serving (`/predict`, `/model`, `/stats`, `/health`) | done |
 | 6 | systemd deployment units + runbook | todo |
 | 7 | CI, architecture diagram, sample fixture | todo |
 
@@ -103,6 +103,24 @@ through the same `build_feature_frame`.
 Current model (≈560 Berlin/Leipzig/Hamburg listings, card-only features):
 holdout median error ≈20%, R²(log) ≈0.82. Thin by design — more data from the
 scheduled scraper and light tuning are the obvious next gains.
+
+## API
+
+`uvicorn realestate.api.main:app` — the model is loaded once at startup onto
+`app.state`; if none is trained yet the app still serves and `/predict` returns
+503.
+
+| Route | Purpose |
+|-------|---------|
+| `POST /predict` | listing attributes → predicted price, €/m², model version, the model's typical % error |
+| `GET /model` | version, metrics, feature list, training row count — a model card over HTTP |
+| `GET /stats` | listing counts by city, price percentiles, last scrape — straight from the DB |
+| `GET /health` | liveness + whether a model is loaded |
+
+```bash
+curl -s localhost:8000/predict -H 'content-type: application/json' \
+  -d '{"city":"berlin","living_area_sqm":75,"rooms":3,"district":"Pankow","quarter":"Prenzlauer Berg"}'
+```
 
 ## Layout
 

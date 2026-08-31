@@ -6,14 +6,14 @@ from pydantic import BaseModel, Field
 
 
 class PredictRequest(BaseModel):
-    city: str = Field(examples=["berlin"])
+    city: str = Field(max_length=100, examples=["berlin"])
     living_area_sqm: float = Field(gt=5, le=1000, examples=[72.0])
     rooms: float | None = Field(default=None, gt=0, le=20, examples=[3.0])
     floor: int | None = Field(default=None, ge=0, le=50, examples=[2])
-    postal_code: str | None = Field(default=None, examples=["10437"])
-    district: str | None = Field(default=None, examples=["Pankow"])
-    quarter: str | None = Field(default=None, examples=["Prenzlauer Berg"])
-    energy_efficiency_class: str | None = Field(default=None, examples=["C"])
+    postal_code: str | None = Field(default=None, max_length=10, examples=["10437"])
+    district: str | None = Field(default=None, max_length=100, examples=["Pankow"])
+    quarter: str | None = Field(default=None, max_length=100, examples=["Prenzlauer Berg"])
+    energy_efficiency_class: str | None = Field(default=None, max_length=4, examples=["C"])
 
 
 class PredictResponse(BaseModel):

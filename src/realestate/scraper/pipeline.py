@@ -64,6 +64,7 @@ def run_scrape(
         delay_min_s=settings.scrape_delay_min_s,
         delay_max_s=settings.scrape_delay_max_s,
         timeout_s=settings.scrape_request_timeout_s,
+        allowed_hosts=getattr(source, "allowed_hosts", None),
     )
 
     with session_scope() as session:

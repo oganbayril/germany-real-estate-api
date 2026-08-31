@@ -20,6 +20,7 @@ BASE_URL = "https://www.immobilienscout24.de"
 
 class ImmoScout24Source:
     name = "immoscout24"
+    allowed_hosts = frozenset({"www.immobilienscout24.de"})
 
     def discover(self, fetch: Fetcher) -> Iterator[SearchTask]:
         raise NotImplementedError(

@@ -68,19 +68,27 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
 
 def _cmd_fetch_fixture(args: argparse.Namespace) -> int:
+    from urllib.parse import urlsplit
+
     from realestate.scraper.client import ScrapeClient, ScrapeError
 
     settings = get_settings()
+    # keep the output inside tests/fixtures/ even if --name contains path parts
     name = args.name or _fixture_name(args.url)
-    dest = FIXTURES_DIR / name
+    dest = (FIXTURES_DIR / name).resolve()
+    if FIXTURES_DIR.resolve() not in dest.parents:
+        print(f"refusing to write outside {FIXTURES_DIR}", file=sys.stderr)
+        return 2
     dest.parent.mkdir(parents=True, exist_ok=True)
 
+    host = urlsplit(args.url).netloc
     with ScrapeClient(
         user_agent=settings.scrape_user_agent,
         delay_min_s=2,
         delay_max_s=4,
         timeout_s=settings.scrape_request_timeout_s,
         respect_robots=not args.no_robots,
+        allowed_hosts=frozenset({host}) if host else None,
     ) as client:
         try:
             resp = client.get(args.url)

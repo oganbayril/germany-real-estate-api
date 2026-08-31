@@ -71,6 +71,7 @@ class ScrapeClient:
         max_retries: int = 3,
         backoff_base_s: float = 2.0,
         blocked_backoff_s: float = 60.0,
+        allowed_hosts: frozenset[str] | None = None,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         self._user_agent = user_agent
@@ -79,6 +80,10 @@ class ScrapeClient:
         self._max_retries = max_retries
         self._backoff_base_s = backoff_base_s
         self._blocked_backoff_s = blocked_backoff_s
+        # When set, every request URL and every redirect hop must be on one of
+        # these hosts -- stops a redirect (from the site or a MITM) sending the
+        # scraper to a link-local / cloud-metadata address.
+        self._allowed_hosts = allowed_hosts
         self._client = httpx.Client(
             headers={
                 "User-Agent": user_agent,
@@ -137,8 +142,13 @@ class ScrapeClient:
             pass  # first request, no wait
         self._last_request_at = time.monotonic()
 
+    def _check_host(self, url: str) -> None:
+        if self._allowed_hosts is not None and urlsplit(url).netloc not in self._allowed_hosts:
+            raise ScrapeError(f"refusing to fetch off-allowlist host: {url}")
+
     # -- fetch -------------------------------------------------------------
     def get(self, url: str, *, referer: str | None = None) -> httpx.Response:
+        self._check_host(url)
         if not self.allowed(url):
             raise RobotsDisallowed(url)
         self._throttle()
@@ -154,6 +164,8 @@ class ScrapeClient:
                 last_error = exc
                 log.warning("transport error on %s (attempt %d): %s", url, attempt, exc)
             else:
+                for hop in (*resp.history, resp):
+                    self._check_host(str(hop.url))
                 if resp.status_code == 403 or _looks_blocked(resp):
                     # Immowelt rate-limits with a 403 challenge; a longer pause
                     # usually clears it, so retry hard before giving up.

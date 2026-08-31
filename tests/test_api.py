@@ -126,6 +126,11 @@ def test_predict_validation_error(client: TestClient) -> None:
     assert resp.status_code == 422
 
 
+def test_predict_rejects_overlong_string(client: TestClient) -> None:
+    resp = client.post("/predict", json={"city": "x" * 5000, "living_area_sqm": 70})
+    assert resp.status_code == 422
+
+
 def test_predict_unknown_city_still_predicts(client: TestClient) -> None:
     resp = client.post("/predict", json={"city": "Atlantis", "living_area_sqm": 80})
     assert resp.status_code == 200

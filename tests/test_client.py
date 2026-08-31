@@ -99,3 +99,26 @@ def test_transport_error_is_retried(httpx_mock: HTTPXMock) -> None:
     httpx_mock.add_response(url="https://site.test/x", status_code=200, text="ok")
     with _client() as client:
         assert client.get("https://site.test/x").text == "ok"
+
+
+def test_allowed_hosts_rejects_off_allowlist_url() -> None:
+    with (
+        _client(allowed_hosts=frozenset({"site.test"})) as client,
+        pytest.raises(ScrapeError, match="off-allowlist"),
+    ):
+        client.get("http://169.254.169.254/latest/meta-data/")
+
+
+def test_allowed_hosts_rejects_cross_host_redirect(httpx_mock: HTTPXMock) -> None:
+    httpx_mock.add_response(url="https://site.test/robots.txt", status_code=404)
+    httpx_mock.add_response(
+        url="https://site.test/x",
+        status_code=302,
+        headers={"location": "http://169.254.169.254/"},
+    )
+    httpx_mock.add_response(url="http://169.254.169.254/", status_code=200, text="secrets")
+    with (
+        _client(allowed_hosts=frozenset({"site.test"})) as client,
+        pytest.raises(ScrapeError, match="off-allowlist"),
+    ):
+        client.get("https://site.test/x")

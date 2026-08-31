@@ -44,6 +44,7 @@ _FLOOR_RE = re.compile(r"(\d+)\.\s*(?:OG|Geschoss|Obergeschoss)", re.IGNORECASE)
 
 class ImmoweltSource:
     name = "immowelt"
+    allowed_hosts = frozenset({"www.immowelt.de"})
 
     def __init__(
         self,

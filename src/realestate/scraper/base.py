@@ -35,6 +35,8 @@ class SearchTask:
 @runtime_checkable
 class Source(Protocol):
     name: str
+    # Hosts the scraper is allowed to fetch / be redirected to for this source.
+    allowed_hosts: frozenset[str]
 
     def discover(self, fetch: Fetcher) -> Iterator[SearchTask]:
         """Yield search-results page URLs to scrape."""

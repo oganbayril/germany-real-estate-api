@@ -20,6 +20,7 @@ dependencies = [
     "joblib>=1.4",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.34",
+    "slowapi>=0.1.9",
 ]
 
 [project.scripts]

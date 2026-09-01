@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the Immowelt scrape ~twice a week
+
+[Timer]
+# Monday and Thursday early morning, plus up to 6h of jitter so the request
+# pattern isn't perfectly regular. Persistent catches up a missed run.
+OnCalendar=Mon,Thu 03:00
+RandomizedDelaySec=6h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

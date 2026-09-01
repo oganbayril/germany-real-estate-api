@@ -39,12 +39,29 @@ class Settings(BaseSettings):
     )
     scrape_request_timeout_s: float = 30.0
 
+    # --- Model / training ---
+    min_train_rows: int = 200
+
     # --- Filesystem ---
     data_dir: Path = PROJECT_ROOT / "data"
     model_dir: Path = PROJECT_ROOT / "models"
 
+    # --- Deployment ---
+    public_domain: str | None = None
+
+    # --- Email (run-summary notifications; all-or-nothing) ---
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    email_to: str | None = None
+
     # --- Logging ---
     log_level: str = "INFO"
+
+    @property
+    def email_configured(self) -> bool:
+        return bool(self.smtp_user and self.smtp_password and self.email_to)
 
     @field_validator("scrape_cities", mode="before")
     @classmethod

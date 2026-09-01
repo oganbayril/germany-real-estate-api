@@ -62,8 +62,13 @@ def test_train_model_reports_reasonable_metrics(synthetic_listings: pd.DataFrame
 
 
 def test_train_model_rejects_tiny_frames() -> None:
-    with pytest.raises(ValueError, match="need >=50"):
+    with pytest.raises(ValueError, match="need >="):
         train_model(pd.DataFrame({"price_eur": [1.0] * 10, "living_area_sqm": [1.0] * 10}))
+
+
+def test_train_model_honours_min_rows(synthetic_listings: pd.DataFrame) -> None:
+    with pytest.raises(ValueError, match="need >=100000"):
+        train_model(synthetic_listings, min_rows=100_000)
 
 
 def test_pipeline_handles_unseen_category(synthetic_listings: pd.DataFrame) -> None:

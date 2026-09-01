@@ -1,0 +1,30 @@
+# Reverse proxy + automatic HTTPS for the real-estate API.
+# setup.sh copies this to /etc/caddy/Caddyfile with REALESTATE_DOMAIN replaced
+# by $RE_PUBLIC_DOMAIN. Caddy obtains and renews the TLS certificate itself.
+#
+# Rate limiting lives in the app (slowapi), so this needs only the stock Caddy
+# binary -- no plugins.
+
+REALESTATE_DOMAIN {
+	encode zstd gzip
+
+	# The API never accepts a body larger than a small JSON object.
+	request_body {
+		max_size 16KB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	reverse_proxy 127.0.0.1:8000
+
+	log {
+		output file /var/log/caddy/realestate.log
+		format json
+	}
+}

@@ -12,7 +12,7 @@ wheels/
 # Environment / secrets
 .env
 .env.*
-!.env.example
+!.env*.example
 
 # Project data (scraped data, DB dumps, scratch) -- root-anchored so it does
 # not swallow the src/realestate/data package
@@ -25,6 +25,9 @@ wheels/
 
 # Trained model artifacts
 /models/
+
+# Database backups (created on the server)
+/backups/
 
 # Test / tooling caches
 .pytest_cache/

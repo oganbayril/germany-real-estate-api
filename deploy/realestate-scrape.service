@@ -1,0 +1,23 @@
+[Unit]
+Description=Scrape Immowelt listings into the database
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=realestate
+Group=realestate
+WorkingDirectory=/opt/realestate
+EnvironmentFile=/opt/realestate/.env
+ExecStart=/opt/realestate/.venv/bin/realestate-scrape run --email
+TimeoutStartSec=2h
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/realestate/data
+ProtectKernelTunables=true
+ProtectKernelModules=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true

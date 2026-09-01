@@ -12,8 +12,6 @@ VPS with plain systemd (services + timer), native Postgres.
 
 ## Status
 
-Phases 0-1 complete. See phases below.
-
 | Phase | Scope | State |
 |------|-------|-------|
 | 0 | Package layout, tooling, config | done |
@@ -22,8 +20,8 @@ Phases 0-1 complete. See phases below.
 | 3 | Cleaning + feature engineering | done |
 | 4 | XGBoost training + eval + artifact registry | done |
 | 5 | FastAPI serving (`/predict`, `/model`, `/stats`, `/health`) | done |
-| 6 | systemd deployment units + runbook | todo |
-| 7 | CI, architecture diagram, sample fixture | todo |
+| 6 | systemd units, Caddy, backups, run-summary emails | done |
+| 7 | CI, architecture diagram | todo |
 
 ## Development
 
@@ -121,6 +119,19 @@ scheduled scraper and light tuning are the obvious next gains.
 curl -s localhost:8000/predict -H 'content-type: application/json' \
   -d '{"city":"berlin","living_area_sqm":75,"rooms":3,"district":"Pankow","quarter":"Prenzlauer Berg"}'
 ```
+
+## Deployment
+
+Single Hetzner VPS, plain systemd (no Docker). `bash deploy/setup.sh` on a fresh
+Debian/Ubuntu box provisions Caddy (auto-HTTPS), native Postgres, the API service,
+and timers for scraping (Mon/Thu), retraining (Sat, restarts the API on success),
+and nightly `pg_dump`. `deploy/update.sh` ships a new `main`. Full runbook,
+schedules, and the Caddy-over-nginx rationale: **[deploy/README.md](deploy/README.md)**.
+
+Hardening: API runs sandboxed (`ProtectSystem=strict`, scoped `ReadWritePaths`,
+syscall filter) because the model artifact is `joblib`/pickle; `slowapi` rate
+limits; `.env` is `chmod 600` via `EnvironmentFile=`; Postgres is localhost-only
+with a non-superuser role; the scraper is pinned to one host (no SSRF).
 
 ## Layout
 

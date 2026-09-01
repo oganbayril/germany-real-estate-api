@@ -1,0 +1,27 @@
+[Unit]
+Description=Retrain the price model on the latest data
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=realestate
+Group=realestate
+WorkingDirectory=/opt/realestate
+EnvironmentFile=/opt/realestate/.env
+ExecStart=/opt/realestate/.venv/bin/realestate-train --email
+# on a successful retrain, restart the API so it picks up the new artifact.
+# "+" runs this line as root (needed to manage another unit); it does not run
+# on ExecStart failure, so a blocked/aborted retrain leaves the API untouched.
+ExecStartPost=+/usr/bin/systemctl restart realestate-api.service
+TimeoutStartSec=30min
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/realestate/models
+ProtectKernelTunables=true
+ProtectKernelModules=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true

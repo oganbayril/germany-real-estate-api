@@ -44,6 +44,11 @@ def _synthetic_df(n: int = 300) -> pd.DataFrame:
     )
 
 
+@pytest.fixture(autouse=True)
+def _rate_limit_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(api_main.limiter, "enabled", False)
+
+
 @pytest.fixture
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     monkeypatch.setattr(registry, "_models_root", lambda: tmp_path)
@@ -135,6 +140,15 @@ def test_predict_unknown_city_still_predicts(client: TestClient) -> None:
     resp = client.post("/predict", json={"city": "Atlantis", "living_area_sqm": 80})
     assert resp.status_code == 200
     assert resp.json()["predicted_price_eur"] > 0
+
+
+def test_predict_is_rate_limited(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(api_main.limiter, "enabled", True)
+    api_main.limiter.reset()
+    payload = {"city": "berlin", "living_area_sqm": 70}
+    codes = {client.post("/predict", json=payload).status_code for _ in range(35)}
+    assert 429 in codes
+    api_main.limiter.reset()
 
 
 def test_model_endpoint(client: TestClient) -> None:

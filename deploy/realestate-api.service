@@ -1,0 +1,33 @@
+[Unit]
+Description=Real-estate price API (uvicorn)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=realestate
+Group=realestate
+WorkingDirectory=/opt/realestate
+EnvironmentFile=/opt/realestate/.env
+ExecStart=/opt/realestate/.venv/bin/uvicorn realestate.api.main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5
+
+# --- sandboxing (the model artifact is loaded via joblib/pickle: keep the
+# --- process boxed in so a poisoned artifact can do as little as possible) ---
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/realestate/data /opt/realestate/models
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

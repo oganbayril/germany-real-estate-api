@@ -13,8 +13,12 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 import numpy as np
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 from realestate import __version__
 from realestate.api.deps import get_predictor
@@ -35,6 +39,8 @@ log = logging.getLogger(__name__)
 
 PredictorDep = Annotated[PricePredictor, Depends(get_predictor)]
 
+limiter = Limiter(key_func=get_remote_address, default_limits=["240/minute"])
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -48,6 +54,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Germany Real-Estate Price API", version=__version__, lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -61,7 +69,8 @@ def health() -> HealthResponse:
 
 
 @app.post("/predict", response_model=PredictResponse)
-def predict(body: PredictRequest, predictor: PredictorDep) -> PredictResponse:
+@limiter.limit("30/minute")
+def predict(request: Request, body: PredictRequest, predictor: PredictorDep) -> PredictResponse:
     result = predictor.predict_one(body.model_dump(exclude_none=True))
     holdout = predictor.metrics.get("holdout", {})
     return PredictResponse(
@@ -86,7 +95,8 @@ def model_info(predictor: PredictorDep) -> ModelInfoResponse:
 
 
 @app.get("/stats", response_model=StatsResponse)
-def stats() -> StatsResponse:
+@limiter.limit("60/minute")
+def stats(request: Request) -> StatsResponse:
     with session_scope() as session:
         total = session.scalar(select(func.count()).select_from(Listing)) or 0
         active = (
@@ -102,24 +112,13 @@ def stats() -> StatsResponse:
                 .order_by(func.count().desc())
             ).all()
         )
-        prices = [
-            p
-            for (p,) in session.execute(
-                select(Listing.price_eur).where(Listing.price_eur.is_not(None))
-            ).all()
-        ]
+        price_eur = _price_summary(session)
         last = session.scalars(
             select(ScrapeRun)
             .where(ScrapeRun.finished_at.is_not(None))
             .order_by(ScrapeRun.id.desc())
         ).first()
-
-    return StatsResponse(
-        listings_total=total,
-        active_listings=active,
-        by_city={str(k): int(v) for k, v in by_city.items()},
-        price_eur=_price_summary(prices),
-        last_scrape=(
+        last_scrape = (
             LastScrape(
                 finished_at=last.finished_at.isoformat() if last.finished_at else None,
                 status=last.status,
@@ -128,19 +127,39 @@ def stats() -> StatsResponse:
             )
             if last
             else None
-        ),
+        )
+
+    return StatsResponse(
+        listings_total=total,
+        active_listings=active,
+        by_city={str(k): int(v) for k, v in by_city.items()},
+        price_eur=price_eur,
+        last_scrape=last_scrape,
     )
 
 
-def _price_summary(prices: list[float]) -> PriceSummary | None:
+def _price_summary(session: Session) -> PriceSummary | None:
+    """Percentiles in SQL on Postgres; fall back to pulling the column on SQLite."""
+    col = Listing.price_eur
+    present = col.is_not(None)
+
+    if session.bind is not None and session.bind.dialect.name == "postgresql":
+        row = session.execute(
+            select(
+                func.min(col),
+                func.percentile_cont(0.25).within_group(col),
+                func.percentile_cont(0.5).within_group(col),
+                func.percentile_cont(0.75).within_group(col),
+                func.max(col),
+            ).where(present)
+        ).one()
+        if row[0] is None:
+            return None
+        return PriceSummary(min=row[0], p25=row[1], median=row[2], p75=row[3], max=row[4])
+
+    prices = [p for (p,) in session.execute(select(col).where(present)).all()]
     if not prices:
         return None
     arr = np.asarray(prices, dtype="float64")
-    p25, p50, p75 = np.percentile(arr, [25, 50, 75])
-    return PriceSummary(
-        min=float(arr.min()),
-        p25=float(p25),
-        median=float(p50),
-        p75=float(p75),
-        max=float(arr.max()),
-    )
+    p25, p50, p75 = (float(v) for v in np.percentile(arr, [25, 50, 75]))
+    return PriceSummary(min=float(arr.min()), p25=p25, median=p50, p75=p75, max=float(arr.max()))

@@ -37,6 +37,9 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Fetch and parse but do not write to the DB.",
     )
+    run.add_argument(
+        "--email", action="store_true", help="Email a one-line summary (VPS timer use)."
+    )
 
     fx = sub.add_parser("fetch-fixture", help="Fetch a URL and save its HTML for tests.")
     fx.add_argument("url")
@@ -57,13 +60,21 @@ def _cmd_run(args: argparse.Namespace) -> int:
         max_search_urls_per_city=args.max_searches,
         dry_run=args.dry_run,
     )
-    print(
+    summary = (
         f"pages={stats.pages_fetched} exposes={stats.exposes_seen} "
         f"new={stats.listings_new} updated={stats.listings_updated} "
         f"price_changes={stats.price_changes} errors={len(stats.errors)}"
     )
+    print(summary)
     for err in stats.errors[:10]:
         print(f"  ! {err}", file=sys.stderr)
+
+    if args.email:
+        from realestate.notify import send_email
+
+        subject = "scrape had errors" if stats.errors else "scrape ok"
+        body = summary + ("\n\n" + "\n".join(stats.errors[:20]) if stats.errors else "")
+        send_email(subject, body)
     return 0
 
 

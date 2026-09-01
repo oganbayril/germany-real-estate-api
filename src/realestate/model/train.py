@@ -96,11 +96,16 @@ def _metrics(y_true_log: np.ndarray, y_pred_log: np.ndarray) -> dict[str, float]
 
 
 def train_model(
-    df: pd.DataFrame, *, test_size: float = 0.2, seed: int = 42, cv_folds: int = 5
+    df: pd.DataFrame,
+    *,
+    test_size: float = 0.2,
+    seed: int = 42,
+    cv_folds: int = 5,
+    min_rows: int = 50,
 ) -> TrainResult:
     feats = build_feature_frame(df).dropna(subset=[TARGET])
-    if len(feats) < 50:
-        raise ValueError(f"need >=50 usable rows to train, got {len(feats)}")
+    if len(feats) < max(min_rows, 50):
+        raise ValueError(f"need >={max(min_rows, 50)} usable rows to train, got {len(feats)}")
 
     x = feats[FEATURE_COLUMNS]
     y = feats[TARGET].to_numpy()
@@ -138,6 +143,10 @@ def train_model(
     return TrainResult(final_pipe, {"cv": cv_metrics, "holdout": holdout_metrics}, metadata)
 
 
+class TrainingBlocked(RuntimeError):
+    """A safety guard refused to (re)train."""
+
+
 # --------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------
@@ -150,10 +159,22 @@ def _load_frame(from_sample: bool) -> pd.DataFrame:
         path = Path(__file__).resolve().parents[3] / "sample" / "listings_sample.csv"
         return clean(pd.read_csv(path))
 
+    from sqlalchemy import select
+
     from realestate.data.clean import load_listings
+    from realestate.db.models import ScrapeRun
     from realestate.db.session import session_scope
 
     with session_scope() as session:
+        last = session.scalars(
+            select(ScrapeRun)
+            .where(ScrapeRun.finished_at.is_not(None))
+            .order_by(ScrapeRun.id.desc())
+        ).first()
+        if last is not None and last.status not in ("success", "partial"):
+            raise TrainingBlocked(
+                f"latest scrape run #{last.id} ended {last.status!r}; refusing to retrain on it"
+            )
         return clean(load_listings(session))
 
 
@@ -182,19 +203,33 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--no-save", action="store_true", help="Train and report but do not persist."
     )
+    parser.add_argument(
+        "--email", action="store_true", help="Email a one-line summary (VPS timer use)."
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
+    from realestate.config import get_settings
+    from realestate.notify import send_email
+
     args = build_parser().parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    settings = get_settings()
 
-    df = _load_frame(args.from_sample)
-    log.info("training on %d cleaned rows", len(df))
+    def _notify(subject: str, body: str) -> None:
+        if args.email:
+            send_email(subject, body, settings=settings)
+
     try:
-        result = train_model(df, test_size=args.test_size, seed=args.seed)
-    except ValueError as exc:
+        df = _load_frame(args.from_sample)
+        log.info("training on %d cleaned rows", len(df))
+        result = train_model(
+            df, test_size=args.test_size, seed=args.seed, min_rows=settings.min_train_rows
+        )
+    except (ValueError, TrainingBlocked) as exc:
         print(f"training aborted: {exc}", file=sys.stderr)
+        _notify("retrain skipped", str(exc))
         return 1
 
     saved_to = "(not saved)"
@@ -203,6 +238,13 @@ def main(argv: list[str] | None = None) -> int:
             registry.save(result.pipeline, metrics=result.metrics, metadata=result.metadata)
         )
     _print_report(result, saved_to)
+    hold = result.metrics["holdout"]
+    _notify(
+        "retrained",
+        f"rows={result.metadata['n_rows_total']} "
+        f"median APE {hold['median_ape_pct']:.1f}% "
+        f"MAE EUR {hold['mae_eur']:,.0f} R2(log) {hold['r2_log']:.3f}\n{saved_to}",
+    )
     return 0
 
 

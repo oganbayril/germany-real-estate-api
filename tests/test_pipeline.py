@@ -38,6 +38,18 @@ class FakeSource:
         ]
 
 
+class SoftBlockedSource(FakeSource):
+    """Search pages load (200) but yield no listings -- what DataDome does to a
+    flagged datacenter IP."""
+
+    def discover(self, fetch):  # noqa: ARG002
+        for i in range(4):
+            yield SearchTask(url=f"https://example.test/search/{i}", city="berlin")
+
+    def parse_listings(self, html: str, task: SearchTask) -> list[dict]:  # noqa: ARG002
+        return []
+
+
 @pytest.fixture
 def wired_db(monkeypatch: pytest.MonkeyPatch) -> Iterator[sessionmaker[Session]]:
     engine = create_engine("sqlite+pysqlite:///:memory:", connect_args={"check_same_thread": False})
@@ -103,4 +115,20 @@ def test_second_run_updates_not_inserts(
     assert stats.listings_updated == 2
     session = wired_db()
     assert session.query(Listing).count() == 2
+    session.close()
+
+
+def test_soft_block_marks_run_blocked(
+    wired_db: sessionmaker[Session], settings: Settings, httpx_mock: HTTPXMock
+) -> None:
+    httpx_mock.add_response(url="https://example.test/robots.txt", text="User-agent: *\nAllow: /")
+    httpx_mock.add_response(text="<html>ok</html>", is_reusable=True)
+
+    pipeline.run_scrape(cities=["berlin"], source=SoftBlockedSource(), settings=settings)
+
+    session = wired_db()
+    run = session.query(ScrapeRun).one()
+    assert run.status == "blocked"
+    assert run.pages_fetched == 4
+    assert run.exposes_seen == 0
     session.close()

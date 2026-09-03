@@ -20,7 +20,7 @@ VPS with plain systemd (services + timer), native Postgres.
 | 3 | Cleaning + feature engineering | done |
 | 4 | XGBoost training + eval + artifact registry | done |
 | 5 | FastAPI serving (`/predict`, `/model`, `/stats`, `/health`) | done |
-| 6 | systemd units, Caddy, backups, run-summary emails | done |
+| 6 | systemd units, Caddy, backups, run-summary emails, local scraper | done |
 | 7 | CI, architecture diagram | todo |
 
 ## Development
@@ -124,8 +124,12 @@ curl -s localhost:8000/predict -H 'content-type: application/json' \
 
 Single Hetzner VPS, plain systemd (no Docker). `bash deploy/setup.sh` on a fresh
 Debian/Ubuntu box provisions Caddy (auto-HTTPS), native Postgres, the API service,
-and timers for scraping (Mon/Thu), retraining (Sat, restarts the API on success),
-and nightly `pg_dump`. `deploy/update.sh` ships a new `main`. Full runbook,
+a weekly retrain timer (restarts the API on success), and nightly `pg_dump`.
+`deploy/update.sh` ships a new `main`.
+
+The **scraper runs on the dev PC**, not the VPS — Immowelt's DataDome blocks
+Hetzner's datacenter ASN. A scheduled `deploy/scrape_local.ps1` tunnels to the VPS
+Postgres over SSH and scrapes into it from a residential connection. Full runbook,
 schedules, and the Caddy-over-nginx rationale: **[deploy/README.md](deploy/README.md)**.
 
 Hardening: API runs sandboxed (`ProtectSystem=strict`, scoped `ReadWritePaths`,

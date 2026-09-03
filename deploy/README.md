@@ -10,10 +10,19 @@ other services already on the box.
                          │                      │
                          │                 Postgres (localhost)
                          │                      ▲
-              realestate-scrape.timer  ─────────┤  (Mon/Thu, writes listings)
-              realestate-train.timer   ─────────┘  (Sat, retrains → restarts API)
-              realestate-backup.timer            (nightly pg_dump, keep 7)
+              realestate-train.timer  ──────────┤  (Sat, retrains → restarts API)
+              realestate-backup.timer           │  (nightly pg_dump, keep 7)
+                         └──────────────────────┼───────────────────────┘
+                                                │  SSH tunnel :15432→:5432
+   dev PC (residential IP) ──────────────────────┘
+     GermanyRealEstate-Scrape task (Mon/Thu) → realestate-scrape run
 ```
+
+**Why the scraper is on the PC, not the VPS:** Immowelt is behind DataDome, which
+blocks Hetzner's datacenter ASN — from the VPS it serves stripped pages then 403s.
+Search pages load fine from a residential connection, so the scrape runs on the
+dev PC and writes into the VPS Postgres over an SSH tunnel. (Same pattern as the
+`turkey-food-inflation` local scraper vs Şok.) Everything else stays on the VPS.
 
 ## Prerequisites
 
@@ -38,40 +47,61 @@ writes `/etc/caddy/Caddyfile` from the template.
 Then, by hand:
 
 ```bash
-sudoedit /opt/realestate/.env          # set RE_PUBLIC_DOMAIN, RE_SMTP_PASSWORD
+sudoedit /opt/realestate/.env               # set RE_PUBLIC_DOMAIN, RE_SMTP_PASSWORD
 systemctl restart realestate-api caddy
-systemctl start realestate-scrape.service   # first data, ~35 min
-systemctl start realestate-train.service    # first model
+systemctl disable --now realestate-scrape.timer   # scraper runs on the PC, not here
 curl -s https://<domain>/health
 ```
+
+Then set up the local scraper (below) and run it once for the first dataset;
+`realestate-train` runs on its Saturday timer, or `systemctl start
+realestate-train.service` to make the first model now.
+
+## Local scraper (dev PC)
+
+`realestate-scrape` runs from a residential connection because DataDome blocks the
+VPS. On the PC, in the repo:
+
+```powershell
+Copy-Item deploy\.scrape_local.env.example deploy\.scrape_local.env
+# edit it: RE_DB_PASSWORD from the VPS (grep RE_DATABASE_URL /opt/realestate/.env),
+#          RE_SMTP_PASSWORD (the shared Gmail app password)
+
+powershell -File deploy\scrape_local.ps1        # first run, ~35 min
+powershell -File deploy\register_scrape_task.ps1   # then: Mon/Thu, "start when available"
+```
+
+`scrape_local.ps1` opens an SSH tunnel (`127.0.0.1:15432` → VPS `:5432`), runs
+`realestate-scrape run --email` against it, and closes the tunnel. Needs your SSH
+key already authorised on the VPS (it is). Logs to `deploy/scrape_local.log`.
 
 ## Operations
 
 | Task | Command |
 |------|---------|
-| Deploy latest `main` | `bash /opt/realestate/deploy/update.sh` |
+| Deploy latest `main` (VPS) | `bash /opt/realestate/deploy/update.sh` |
 | API logs | `journalctl -u realestate-api -f` |
-| Last scrape | `journalctl -u realestate-scrape -n 100` |
-| Run a scrape now | `systemctl start realestate-scrape.service` |
 | Retrain now | `systemctl start realestate-train.service` |
 | Timer schedule | `systemctl list-timers 'realestate-*'` |
+| Scrape now (PC) | `Start-ScheduledTask -TaskName 'GermanyRealEstate-Scrape'` or run `scrape_local.ps1` |
+| Last scrape (PC) | tail `deploy/scrape_local.log` |
 | Restore a backup | `pg_restore -d 'postgresql://realestate:…@localhost/realestate' -c /opt/realestate/backups/realestate-<stamp>.dump` |
-
-DB (sqlite3 CLI isn't installed; use the venv):
-`sudo -u realestate /opt/realestate/.venv/bin/python -c "..."` from `/opt/realestate`.
 
 ## Schedules
 
-- **Scrape** — `Mon,Thu 03:00` + up to 6 h jitter. ~35 min/run at
+- **Scrape** — PC scheduled task, `Mon,Thu 04:00`, "start when available" so it
+  catches up whenever the PC is next on. ~35 min at
   `RE_SCRAPE_MAX_SEARCH_URLS_PER_CITY=40` × 5 cities.
-- **Retrain** — `Sat 04:00`. `realestate-train` refuses if the DB has
+- **Retrain** — VPS, `Sat 04:00`. `realestate-train` refuses if the DB has
   `< RE_MIN_TRAIN_ROWS` usable rows or the latest scrape run didn't succeed. On a
   successful retrain it restarts `realestate-api` (≈2 s blip) so the new artifact
   is picked up.
-- **Backup** — nightly `02:30`, `pg_dump -Fc`, keeps the 7 newest.
+- **Backup** — VPS, nightly `02:30`, `pg_dump -Fc`, keeps the 7 newest.
 
-`--email` on the scrape/train units sends a one-line summary via the shared Gmail
-app password (`RE_SMTP_*` in `.env`); blank `RE_SMTP_PASSWORD` disables it.
+`--email` sends a one-line summary via the shared Gmail app password
+(`RE_SMTP_*`); a blank password disables it. A scrape that fetches pages but
+parses zero listings is recorded as `blocked` (soft block), which also stops the
+next retrain from running on empty data.
 
 ## Why Caddy, not nginx
 

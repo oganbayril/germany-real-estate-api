@@ -82,7 +82,11 @@ def run_scrape(
         status, error = "failed", str(exc)
         raise
     finally:
-        if status == "success" and stats.errors:
+        if status == "success" and stats.pages_fetched >= 3 and stats.exposes_seen == 0:
+            # pages loaded but nothing parsed out of any of them -> soft block
+            status = "blocked"
+            error = error or "fetched pages but parsed 0 listings (likely a soft block)"
+        elif status == "success" and stats.errors:
             status = "partial"
         with session_scope() as session:
             run = session.get(ScrapeRun, run_id)

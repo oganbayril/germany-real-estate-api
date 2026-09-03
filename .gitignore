@@ -29,6 +29,10 @@ wheels/
 # Database backups (created on the server)
 /backups/
 
+# Local scraper (runs on the dev PC, not the VPS)
+/deploy/.scrape_local.env
+/deploy/scrape_local.log
+
 # Test / tooling caches
 .pytest_cache/
 .ruff_cache/

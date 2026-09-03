@@ -73,7 +73,9 @@ sudo -u "$APP_USER" bash -c "cd '$APP_DIR' && set -a && . ./.env && set +a && ./
 echo "==> systemd units"
 cp "$APP_DIR"/deploy/realestate-*.service "$APP_DIR"/deploy/realestate-*.timer /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable --now realestate-scrape.timer realestate-train.timer realestate-backup.timer
+# NOTE: realestate-scrape.timer is installed but NOT enabled -- DataDome blocks
+# the datacenter IP, so the scrape runs from the dev PC (see deploy/README.md).
+systemctl enable --now realestate-train.timer realestate-backup.timer
 systemctl enable --now realestate-api.service \
   || echo "  !! api did not start -- inspect: journalctl -u realestate-api -xe   (setup continues)"
 

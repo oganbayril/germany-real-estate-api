@@ -7,13 +7,15 @@
 
 [CmdletBinding()]
 param(
-    [string]$EnvFile = (Join-Path $PSScriptRoot '.scrape_local.env'),
+    [string]$EnvFile,
     [int]$LocalPort = 15432
 )
 
 $ErrorActionPreference = 'Stop'
-$repo = Split-Path $PSScriptRoot -Parent
-$logFile = Join-Path $PSScriptRoot 'scrape_local.log'
+$scriptDir = Split-Path -Parent $PSCommandPath
+$repo = Split-Path -Parent $scriptDir
+if (-not $EnvFile) { $EnvFile = Join-Path $scriptDir '.scrape_local.env' }
+$logFile = Join-Path $scriptDir 'scrape_local.log'
 
 function Log($msg) {
     $line = ('{0}  {1}' -f (Get-Date -Format 'u'), $msg)

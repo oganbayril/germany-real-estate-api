@@ -3,7 +3,7 @@
 #   Unregister-ScheduledTask -TaskName 'GermanyRealEstate-Scrape' -Confirm:$false
 
 $ErrorActionPreference = 'Stop'
-$script = Join-Path $PSScriptRoot 'scrape_local.ps1'
+$script = Join-Path (Split-Path -Parent $PSCommandPath) 'scrape_local.ps1'
 
 $action = New-ScheduledTaskAction -Execute 'powershell.exe' `
     -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$script`""

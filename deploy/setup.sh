@@ -32,8 +32,8 @@ id -u "$APP_USER" >/dev/null 2>&1 || useradd --system --home-dir "$APP_DIR" --sh
 install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR"
 install -d -o caddy -g caddy /var/log/caddy
 
-echo "==> uv"
-if ! command -v uv >/dev/null; then
+echo "==> uv (system-wide at /usr/local/bin, independent of any per-user install)"
+if [[ ! -x /usr/local/bin/uv ]]; then
   curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
 fi
 
@@ -73,8 +73,9 @@ sudo -u "$APP_USER" bash -c "cd '$APP_DIR' && set -a && . ./.env && set +a && ./
 echo "==> systemd units"
 cp "$APP_DIR"/deploy/realestate-*.service "$APP_DIR"/deploy/realestate-*.timer /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable --now realestate-api.service
 systemctl enable --now realestate-scrape.timer realestate-train.timer realestate-backup.timer
+systemctl enable --now realestate-api.service \
+  || echo "  !! api did not start -- inspect: journalctl -u realestate-api -xe   (setup continues)"
 
 echo "==> caddy"
 sed "s/REALESTATE_DOMAIN/${RE_PUBLIC_DOMAIN}/" "$APP_DIR/deploy/Caddyfile" > /etc/caddy/Caddyfile

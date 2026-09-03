@@ -8,7 +8,7 @@ Type=oneshot
 User=realestate
 Group=realestate
 EnvironmentFile=/opt/realestate/.env
-ExecStart=/opt/realestate/deploy/realestate-backup.sh
+ExecStart=/bin/bash /opt/realestate/deploy/realestate-backup.sh
 
 NoNewPrivileges=true
 PrivateTmp=true

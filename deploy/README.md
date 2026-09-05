@@ -90,8 +90,12 @@ key already authorised on the VPS (it is). Logs to `deploy/scrape_local.log`.
 ## Schedules
 
 - **Scrape** — PC scheduled task, `Mon,Thu 04:00`, "start when available" so it
-  catches up whenever the PC is next on. ~35 min at
-  `RE_SCRAPE_MAX_SEARCH_URLS_PER_CITY=40` × 5 cities.
+  catches up whenever the PC is next on. Deliberately small: `≈5` search
+  URLs/city, `25–45 s` between requests, and the sitemap-derived URL pool is
+  cached for `RE_SCRAPE_DISCOVERY_CACHE_DAYS` (14) so a run is ~25 real requests
+  total. DataDome scores IPs over time — raise the caps once a steady dataset
+  exists and the IP has cooled. The discovery cache lives at
+  `data/immowelt_search_urls.json` on the PC; delete it to force a rebuild.
 - **Retrain** — VPS, `Sat 04:00`. `realestate-train` refuses if the DB has
   `< RE_MIN_TRAIN_ROWS` usable rows or the latest scrape run didn't succeed. On a
   successful retrain it restarts `realestate-api` (≈2 s blip) so the new artifact

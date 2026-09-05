@@ -221,12 +221,13 @@ def main(argv: list[str] | None = None) -> int:
         if args.email:
             send_email(subject, body, settings=settings)
 
+    # the bundled sample is a small deliberate bootstrap set; only the DB path
+    # is held to the production row floor.
+    min_rows = 50 if args.from_sample else settings.min_train_rows
     try:
         df = _load_frame(args.from_sample)
         log.info("training on %d cleaned rows", len(df))
-        result = train_model(
-            df, test_size=args.test_size, seed=args.seed, min_rows=settings.min_train_rows
-        )
+        result = train_model(df, test_size=args.test_size, seed=args.seed, min_rows=min_rows)
     except (ValueError, TrainingBlocked) as exc:
         print(f"training aborted: {exc}", file=sys.stderr)
         _notify("retrain skipped", str(exc))

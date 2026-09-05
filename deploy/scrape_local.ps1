@@ -61,14 +61,21 @@ try {
 
     $env:RE_DATABASE_URL = "postgresql+psycopg://realestate:$($cfg['RE_DB_PASSWORD'])@127.0.0.1:$LocalPort/realestate"
     foreach ($k in 'RE_SMTP_HOST', 'RE_SMTP_PORT', 'RE_SMTP_USER', 'RE_SMTP_PASSWORD', 'RE_EMAIL_TO',
-        'RE_SCRAPE_CITIES', 'RE_SCRAPE_MAX_SEARCH_URLS_PER_CITY') {
+        'RE_SCRAPE_CITIES', 'RE_SCRAPE_MAX_SEARCH_URLS_PER_CITY',
+        'RE_SCRAPE_DELAY_MIN_S', 'RE_SCRAPE_DELAY_MAX_S', 'RE_SCRAPE_DISCOVERY_CACHE_DAYS') {
         if ($cfg.ContainsKey($k)) { Set-Item "env:$k" $cfg[$k] }
     }
 
     Log 'scraping'
-    & uv run --project $repo realestate-scrape run --email 2>&1 | ForEach-Object { Log $_ }
-    Log "scrape finished (exit $LASTEXITCODE)"
-    exit $LASTEXITCODE
+    $outFile = "$logFile.run"
+    & uv run --project $repo realestate-scrape run --email *> $outFile 2>&1
+    $code = $LASTEXITCODE
+    if (Test-Path $outFile) {
+        Get-Content $outFile | ForEach-Object { Log $_ }
+        Remove-Item $outFile -Force
+    }
+    Log "scrape finished (exit $code)"
+    exit $code
 }
 finally {
     if ($ssh -and -not $ssh.HasExited) { Stop-Process -Id $ssh.Id -Force; Log 'tunnel closed' }

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -13,57 +14,82 @@ FIXTURES = Path(__file__).parent / "fixtures" / "immowelt"
 
 
 @pytest.fixture
-def source() -> ImmoweltSource:
-    return ImmoweltSource()
+def source(tmp_path: Path) -> ImmoweltSource:
+    return ImmoweltSource(cache_path=tmp_path / "cache.json")
 
 
 def _search_html() -> str:
     return (FIXTURES / "search_berlin_p1.html").read_text(encoding="utf-8")
 
 
-# -- discovery -------------------------------------------------------------
-def test_discover_filters_to_target_cities(source: ImmoweltSource) -> None:
-    index = """<sitemapindex>
-      <sitemap><loc>https://www.immowelt.de/sitemaps/BUY_APARTMENT_X/x_1.xml</loc></sitemap>
-      <sitemap><loc>https://www.immowelt.de/sitemaps/RENT_APARTMENT_Y/y_1.xml</loc></sitemap>
-    </sitemapindex>"""
-    sub = """<urlset>
-      <url><loc>https://www.immowelt.de/suche/kaufen/wohnung/berlin-10115/moabit-10557/nbh2de1</loc></url>
-      <url><loc>https://www.immowelt.de/suche/kaufen/wohnung/koln-50667/altstadt-50667/nbh2de2</loc></url>
-      <url><loc>https://www.immowelt.de/suche/kaufen/wohnung/erfurt-99084/nord-99085/nbh2de3</loc></url>
-    </urlset>"""
-    pages = {
-        "https://www.immowelt.de/sitemaps/sitemap_index.xml": index,
-        "https://www.immowelt.de/sitemaps/BUY_APARTMENT_X/x_1.xml": sub,
-    }
-    tasks = list(source.discover(lambda url: pages[url]))
-
-    assert {t.city for t in tasks} == {"berlin", "koeln"}  # erfurt + rent sitemap excluded
-
-
-def test_discover_respects_per_city_cap() -> None:
-    src = ImmoweltSource(cities=["berlin"], max_search_urls_per_city=3)
-    subs = [f"https://www.immowelt.de/sitemaps/BUY_APARTMENT_{n}/s_1.xml" for n in range(5)]
+def _sitemaps(city_slugs: list[str], per: int = 4) -> dict[str, str]:
+    subs = [f"https://www.immowelt.de/sitemaps/BUY_APARTMENT_{n}/s_1.xml" for n in range(6)]
     index = (
         "<sitemapindex>"
         + "".join(f"<sitemap><loc>{s}</loc></sitemap>" for s in subs)
+        + "<sitemap><loc>https://www.immowelt.de/sitemaps/RENT_APARTMENT_R/r_1.xml</loc></sitemap>"
         + "</sitemapindex>"
     )
     pages = {"https://www.immowelt.de/sitemaps/sitemap_index.xml": index}
     for j, s in enumerate(subs):
-        pages[s] = (
-            "<urlset>"
-            + "".join(
-                f"<url><loc>https://www.immowelt.de/suche/kaufen/wohnung/berlin-10115/q{j}{i}-1000{i}/nbh{j}{i}</loc></url>"
-                for i in range(4)
-            )
-            + "</urlset>"
-        )
+        urls = [
+            f"https://www.immowelt.de/suche/kaufen/wohnung/{slug}-10115/q{j}{i}-2000{i}/nbh{j}{i}"
+            for slug in city_slugs
+            for i in range(per)
+        ]
+        pages[s] = "<urlset>" + "".join(f"<url><loc>{u}</loc></url>" for u in urls) + "</urlset>"
+    return pages
 
-    tasks = list(src.discover(lambda u: pages[u]))
-    assert len(tasks) == 3  # cap honoured
-    # quota is 1/sitemap (3 // 8 -> 1), so the 3 come from 3 different sub-sitemaps
-    assert len({t.url.split("/nbh")[1][0] for t in tasks}) == 3
+
+# -- discovery -------------------------------------------------------------
+def test_discover_filters_to_target_cities(tmp_path: Path) -> None:
+    src = ImmoweltSource(cache_path=tmp_path / "c.json")
+    pages = _sitemaps(["berlin", "koln", "erfurt"])
+    tasks = list(src.discover(lambda url: pages[url]))
+    assert {t.city for t in tasks} == {"berlin", "koeln"}  # erfurt not a target
+
+
+def test_discover_respects_per_city_cap(tmp_path: Path) -> None:
+    src = ImmoweltSource(
+        cities=["berlin"], max_search_urls_per_city=3, cache_path=tmp_path / "c.json"
+    )
+    pages = _sitemaps(["berlin"], per=10)
+    tasks = list(src.discover(lambda url: pages[url]))
+    assert len(tasks) == 3
+    assert all(t.city == "berlin" for t in tasks)
+
+
+def test_discover_uses_cache_on_second_run(tmp_path: Path) -> None:
+    cache = tmp_path / "c.json"
+    pages = _sitemaps(["berlin"], per=8)
+    calls: list[str] = []
+
+    def fetch(url: str) -> str:
+        calls.append(url)
+        return pages[url]
+
+    src = ImmoweltSource(cities=["berlin"], max_search_urls_per_city=3, cache_path=cache)
+    list(src.discover(fetch))
+    assert calls  # walked the sitemaps
+    assert cache.exists()
+
+    calls.clear()
+    src2 = ImmoweltSource(cities=["berlin"], max_search_urls_per_city=3, cache_path=cache)
+    tasks = list(src2.discover(fetch))
+    assert calls == []  # served entirely from cache, zero network
+    assert len(tasks) == 3
+
+
+def test_discover_rebuilds_when_cache_stale(tmp_path: Path) -> None:
+    cache = tmp_path / "c.json"
+    cache.write_text(
+        json.dumps({"built_at": "2000-01-01T00:00:00+00:00", "urls": [["berlin", "x"]]}), "utf-8"
+    )
+    pages = _sitemaps(["berlin"], per=4)
+    calls: list[str] = []
+    src = ImmoweltSource(cities=["berlin"], max_search_urls_per_city=3, cache_path=cache)
+    list(src.discover(lambda u: (calls.append(u), pages[u])[1]))
+    assert calls  # stale -> re-walked
 
 
 # -- listing cards ------------------------------------------------------

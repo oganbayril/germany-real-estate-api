@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     scrape_delay_min_s: float = 8.0
     scrape_delay_max_s: float = 15.0
     scrape_max_search_urls_per_city: int = 40
+    # Reuse the sitemap-derived search-URL pool for this many days so most runs
+    # spend requests only on real search pages, not on re-walking the sitemaps.
+    scrape_discovery_cache_days: float = 7.0
     scrape_user_agent: str = (
         "germany-real-estate-api/0.1 (personal portfolio project; "
         "non-commercial; contact: oganby@gmail.com)"

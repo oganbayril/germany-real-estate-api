@@ -19,6 +19,9 @@ sudo -u "$APP_USER" bash -c "
 "
 
 systemctl restart realestate-api.service
-sleep 1
-systemctl --no-pager --lines=0 status realestate-api.service
-curl -fsS http://127.0.0.1:8000/health && echo
+for _ in $(seq 1 15); do
+  sleep 2
+  curl -fsS http://127.0.0.1:8000/health && { echo; exit 0; }
+done
+echo "api did not become healthy -- check: journalctl -u realestate-api -xe" >&2
+exit 1

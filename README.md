@@ -8,7 +8,13 @@ Immowelt scraper  ->  Postgres  ->  feature pipeline  ->  XGBoost model  ->  Fas
 
 Portfolio project demonstrating a full ML deployment: periodic data collection,
 a trained regression model, and a served prediction API — deployed on a Hetzner
-VPS with plain systemd (services + timer), native Postgres.
+VPS with plain systemd, native Postgres, Caddy/TLS.
+
+**Live:** <https://germany-real-estate.duckdns.org/health> · `/predict` · `/model` · `/stats`
+
+The model currently trains on the bundled 180-row sample — Immowelt's DataDome
+throttles the scraper hard (see [deploy/README.md](deploy/README.md)), so the
+real dataset accumulates slowly from a rate-limited local scrape.
 
 ## Status
 

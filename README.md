@@ -1,20 +1,45 @@
 # germany-real-estate-api
 
-A German real-estate price predictor, end to end:
+[![CI](https://github.com/oganbayril/germany-real-estate-api/actions/workflows/ci.yml/badge.svg)](https://github.com/oganbayril/germany-real-estate-api/actions/workflows/ci.yml)
 
-```
-Immowelt scraper  ->  Postgres  ->  feature pipeline  ->  XGBoost model  ->  FastAPI
-```
+A German real-estate price predictor, end to end — scrape → store → train → serve.
 
 Portfolio project demonstrating a full ML deployment: periodic data collection,
 a trained regression model, and a served prediction API — deployed on a Hetzner
 VPS with plain systemd, native Postgres, Caddy/TLS.
 
 **Live:** <https://germany-real-estate.duckdns.org/health> · `/predict` · `/model` · `/stats`
+See [MODEL_CARD.md](MODEL_CARD.md) for what the model does and doesn't do.
 
 The model currently trains on the bundled 180-row sample — Immowelt's DataDome
 throttles the scraper hard (see [deploy/README.md](deploy/README.md)), so the
 real dataset accumulates slowly from a rate-limited local scrape.
+
+```mermaid
+flowchart LR
+    subgraph pc["dev PC (residential IP)"]
+        scrape["realestate-scrape<br/>(Mon/Thu task)"]
+    end
+    subgraph vps["Hetzner VPS"]
+        direction TB
+        pg[("Postgres")]
+        train["realestate-train<br/>(Sat timer, guarded)"]
+        models[["models/&lt;ts&gt;/<br/>model.joblib"]]
+        api["FastAPI / uvicorn"]
+        caddy["Caddy · TLS"]
+        backup["pg_dump<br/>(nightly)"]
+    end
+    immowelt["immowelt.de<br/>sitemaps + search pages"] -->|"httpx, rate-limited,<br/>robots-aware"| scrape
+    scrape -->|"SSH tunnel :5432"| pg
+    pg --> train
+    train --> models
+    train -.->|"restart on success"| api
+    models --> api
+    pg --> api
+    pg --> backup
+    api --> caddy
+    caddy -->|"HTTPS"| client(["client<br/>POST /predict"])
+```
 
 ## Status
 
@@ -27,7 +52,7 @@ real dataset accumulates slowly from a rate-limited local scrape.
 | 4 | XGBoost training + eval + artifact registry | done |
 | 5 | FastAPI serving (`/predict`, `/model`, `/stats`, `/health`) | done |
 | 6 | systemd units, Caddy, backups, run-summary emails, local scraper | done |
-| 7 | CI, architecture diagram | todo |
+| 7 | CI, dependabot, architecture diagram, model card | done |
 
 ## Development
 

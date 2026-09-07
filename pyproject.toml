@@ -16,7 +16,9 @@ dependencies = [
     "pandas>=2.2",
     "numpy>=2.1",
     "scikit-learn>=1.6",
-    "xgboost>=2.1",
+    # CPU-only build: same `xgboost` import, without the ~200 MB of bundled
+    # NVIDIA CUDA/NCCL libraries we'd never use on this deployment.
+    "xgboost-cpu>=3.0",
     "joblib>=1.4",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.34",

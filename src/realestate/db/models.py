@@ -50,7 +50,8 @@ class Listing(TimestampMixin, Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    expose_id: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    # Immowelt's real IDs are 36-char UUIDs (e.g. "1215b46c-9e03-4081-...").
+    expose_id: Mapped[str] = mapped_column(String(40), unique=True, index=True)
     url: Mapped[str | None] = mapped_column(String(512))
 
     # Location
@@ -111,7 +112,7 @@ class ListingPriceHistory(Base):
     listing_id: Mapped[int] = mapped_column(
         ForeignKey("listings.id", ondelete="CASCADE"), index=True
     )
-    expose_id: Mapped[str] = mapped_column(String(32), index=True)
+    expose_id: Mapped[str] = mapped_column(String(40), index=True)
     price_eur: Mapped[float] = mapped_column(Float)
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     scrape_run_id: Mapped[int | None] = mapped_column(

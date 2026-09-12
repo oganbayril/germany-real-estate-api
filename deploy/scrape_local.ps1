@@ -11,7 +11,9 @@ param(
     [int]$LocalPort = 15432
 )
 
-$ErrorActionPreference = 'Stop'
+# Continue (not Stop): the scraper's own stderr logging must not be treated as
+# a terminating PowerShell error, and a `throw` below still runs `finally`.
+$ErrorActionPreference = 'Continue'
 $scriptDir = Split-Path -Parent $PSCommandPath
 $repo = Split-Path -Parent $scriptDir
 if (-not $EnvFile) { $EnvFile = Join-Path $scriptDir '.scrape_local.env' }
@@ -67,13 +69,12 @@ try {
     }
 
     Log 'scraping'
-    $outFile = "$logFile.run"
-    & uv run --project $repo realestate-scrape run --email *> $outFile 2>&1
+    # Tee-Object appends each line to disk as it arrives, so a killed/interrupted
+    # run (PC sleep, closed window, ...) still leaves the real progress on disk
+    # instead of losing everything to a batched redirect.
+    & uv run --project $repo realestate-scrape run --email 2>&1 |
+        Tee-Object -FilePath $logFile -Append | Out-Host
     $code = $LASTEXITCODE
-    if (Test-Path $outFile) {
-        Get-Content $outFile | ForEach-Object { Log $_ }
-        Remove-Item $outFile -Force
-    }
     Log "scrape finished (exit $code)"
     exit $code
 }

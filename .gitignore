@@ -31,7 +31,7 @@ wheels/
 
 # Local scraper (runs on the dev PC, not the VPS)
 /deploy/.scrape_local.env
-/deploy/scrape_local.log
+/deploy/scrape_local.log*
 
 # Test / tooling caches
 .pytest_cache/

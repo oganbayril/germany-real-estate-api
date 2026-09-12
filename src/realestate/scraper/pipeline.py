@@ -76,8 +76,14 @@ def run_scrape(
         with client:
             _run(client, source, run_id, dry_run, stats)
     except BlockedError as exc:
-        status, error = "blocked", str(exc)
-        log.error("scrape blocked: %s", exc)
+        if stats.listings_new or stats.listings_updated:
+            # got interrupted, but real data landed -- don't starve the retrain
+            # guard forever just because DataDome eventually cuts every run off.
+            status, error = "partial", f"blocked partway through: {exc}"
+            log.warning("scrape blocked after partial progress: %s", exc)
+        else:
+            status, error = "blocked", str(exc)
+            log.error("scrape blocked: %s", exc)
     except Exception as exc:
         status, error = "failed", str(exc)
         raise

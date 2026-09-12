@@ -14,6 +14,9 @@ param(
 # Continue (not Stop): the scraper's own stderr logging must not be treated as
 # a terminating PowerShell error, and a `throw` below still runs `finally`.
 $ErrorActionPreference = 'Continue'
+# Windows PowerShell 5.1 otherwise mis-decodes piped output from uv/python as
+# UTF-16, rendering every line as space-separated single characters.
+$OutputEncoding = [System.Text.Encoding]::UTF8
 $scriptDir = Split-Path -Parent $PSCommandPath
 $repo = Split-Path -Parent $scriptDir
 if (-not $EnvFile) { $EnvFile = Join-Path $scriptDir '.scrape_local.env' }

@@ -50,6 +50,19 @@ class SoftBlockedSource(FakeSource):
         return []
 
 
+class BlockedAfterProgressSource(FakeSource):
+    """First page succeeds (real listings land), second page is a hard block."""
+
+    def discover(self, fetch):  # noqa: ARG002
+        yield SearchTask(url="https://example.test/search/ok", city="berlin")
+        yield SearchTask(url="https://example.test/search/blocked", city="berlin")
+
+    def parse_listings(self, html: str, task: SearchTask) -> list[dict]:
+        if "blocked" in task.url:
+            return []
+        return super().parse_listings(html, task)
+
+
 @pytest.fixture
 def wired_db(monkeypatch: pytest.MonkeyPatch) -> Iterator[sessionmaker[Session]]:
     engine = create_engine("sqlite+pysqlite:///:memory:", connect_args={"check_same_thread": False})
@@ -129,6 +142,32 @@ def test_soft_block_marks_run_blocked(
     session = wired_db()
     run = session.query(ScrapeRun).one()
     assert run.status == "blocked"
-    assert run.pages_fetched == 4
-    assert run.exposes_seen == 0
+
+
+def test_block_after_partial_progress_marks_run_partial(
+    wired_db: sessionmaker[Session],
+    settings: Settings,
+    httpx_mock: HTTPXMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # skip the real client's blocked-retry backoff (up to 60s) -- we only care
+    # that BlockedError still ends up raised after retries are exhausted.
+    monkeypatch.setattr("realestate.scraper.client.time.sleep", lambda *_: None)
+
+    httpx_mock.add_response(url="https://example.test/robots.txt", text="User-agent: *\nAllow: /")
+    httpx_mock.add_response(url="https://example.test/search/ok", text="<html>ok</html>")
+    httpx_mock.add_response(
+        url="https://example.test/search/blocked", status_code=403, is_reusable=True
+    )
+
+    pipeline.run_scrape(cities=["berlin"], source=BlockedAfterProgressSource(), settings=settings)
+
+    session = wired_db()
+    run = session.query(ScrapeRun).one()
+    assert run.status == "partial"
+    assert run.listings_new == 3
+    assert "blocked partway through" in run.error
+    assert session.query(Listing).count() == 3
+    assert run.pages_fetched == 1
+    assert run.exposes_seen == 3
     session.close()

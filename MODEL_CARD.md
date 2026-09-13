@@ -21,28 +21,27 @@ Apartment-for-sale listings from **immowelt.de**, collected by this project's
 scraper from public search-results pages (no detail pages — those are behind a
 bot wall). Fields therefore come from the results cards only.
 
-- **Scope:** Berlin, Hamburg, Leipzig (München and Köln are configured but not
-  yet in the dataset).
+- **Scope:** Berlin, Hamburg, München, Köln, Leipzig.
 - **Target:** the listed **asking** price, not a transaction price.
-- **Current model** (`2026-09-05T20-13-24Z`): trained on the bundled
-  `sample/listings_sample.csv` — **180 listings**, prices rounded to €1,000 and
-  street numbers removed. This is a bootstrap so the API is live; it is replaced
-  automatically once the real scraped dataset is large enough
-  (`RE_MIN_TRAIN_ROWS`, default 200).
+- **Current model** (`2026-09-13T23-37-44Z`): trained on **645 real scraped
+  listings** across all 5 cities. The very first deployed model (until enough
+  data existed) trained on the bundled `sample/listings_sample.csv` (180 rows,
+  Berlin only) — that bootstrap path still exists for a fresh deployment with an
+  empty database (`RE_MIN_TRAIN_ROWS`, default 200).
 
 ## Performance
 
-5-fold out-of-fold CV and a 20% hold-out, in euro terms (n = 180 total):
+5-fold out-of-fold CV and a 20% hold-out, in euro terms (n = 645 total):
 
-| metric | CV (n=144) | hold-out (n=36) |
+| metric | CV (n=516) | hold-out (n=129) |
 |---|---|---|
-| median abs. % error | 18.6 % | 20.5 % |
-| MAPE | 25.6 % | 26.2 % |
-| MAE | €136,500 | €126,700 |
-| R² (log price) | 0.81 | 0.77 |
-| R² (euro price) | 0.73 | 0.64 |
+| median abs. % error | 16.9 % | 15.5 % |
+| MAPE | 22.9 % | 19.7 % |
+| MAE | €141,500 | €122,600 |
+| R² (log price) | 0.78 | 0.83 |
+| R² (euro price) | 0.61 | 0.82 |
 
-Read: roughly **half of predictions land within ~20 %** of the asking price. The
+Read: roughly **half of predictions land within ~16 %** of the asking price. The
 gap between log-R² and euro-R² is the long right tail — a few large errors on
 expensive flats dominate the squared/absolute euro metrics.
 
@@ -53,9 +52,9 @@ location columns (`postal_prefix`, `district`, `quarter`).
 
 - **Asking ≠ sold.** It models what sellers list, which runs above achieved
   prices, especially in a soft market.
-- **Small, non-random sample.** 180 rows, 3 cities, skewed toward the
-  neighbourhoods that appear first in Immowelt's sitemaps. Not representative of
-  the German market.
+- **Small, non-random sample.** A few hundred rows across 5 cities, skewed toward
+  whichever districts and filter combinations the scraper's sitemap-derived
+  discovery has sampled so far. Not representative of the German market.
 - **Thin features.** No year built, condition, heating type, or amenities — those
   live on detail pages the scraper doesn't fetch. Two identical-on-paper flats in
   very different states get the same prediction.

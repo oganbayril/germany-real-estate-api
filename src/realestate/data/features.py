@@ -105,21 +105,23 @@ def _resolve_quarter(df: pd.DataFrame) -> pd.Series:
     return parsed
 
 
-def _quarter(series: pd.Series | None, index: pd.Index) -> pd.Series:
+def quarter_from_address(value: object) -> str | None:
     """Ortsteil from an address like "Street 1, Moabit, Mitte (10553)" -> "Moabit".
 
     The address is ``[street,] quarter, district (plz)``. The quarter is the
     second-to-last comma segment once the "(plz)" tail is removed; if there is
-    only one segment (just the district), there is no quarter.
+    only one segment (just the district), there is no quarter. Public because
+    the API's /locations endpoint reuses it to list real quarters for the demo
+    page's dropdown -- same parsing the model was actually trained on.
     """
+    if not isinstance(value, str):
+        return None
+    head = re.sub(r"\s*\(\d{5}\)\s*$", "", value).strip()
+    parts = [p.strip() for p in head.split(",") if p.strip()]
+    return parts[-2] if len(parts) >= 2 else None
+
+
+def _quarter(series: pd.Series | None, index: pd.Index) -> pd.Series:
     if series is None:
         return pd.Series(index=index, dtype="object")
-
-    def pick(value: object) -> str | None:
-        if not isinstance(value, str):
-            return None
-        head = re.sub(r"\s*\(\d{5}\)\s*$", "", value).strip()
-        parts = [p.strip() for p in head.split(",") if p.strip()]
-        return parts[-2] if len(parts) >= 2 else None
-
-    return pd.Series([pick(v) for v in series], index=index, dtype="object")
+    return pd.Series([quarter_from_address(v) for v in series], index=index, dtype="object")

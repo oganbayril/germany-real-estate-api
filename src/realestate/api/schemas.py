@@ -4,16 +4,31 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from realestate.data.clean import DEFAULT_BOUNDS
+
+_AREA_MIN, _AREA_MAX = DEFAULT_BOUNDS.living_area_sqm
+_ROOMS_MIN, _ROOMS_MAX = DEFAULT_BOUNDS.rooms
+_FLOOR_MIN, _FLOOR_MAX = DEFAULT_BOUNDS.floor
+
 
 class PredictRequest(BaseModel):
+    """Bounds mirror ``data.clean.DEFAULT_BOUNDS`` -- the same range the training
+    data itself is cleaned to, so a request can't ask the model to extrapolate
+    (or just get messed with) far outside anything it was ever trained on."""
+
     city: str = Field(max_length=100, examples=["berlin"])
-    living_area_sqm: float = Field(gt=5, le=1000, examples=[72.0])
-    rooms: float | None = Field(default=None, gt=0, le=20, examples=[3.0])
-    floor: int | None = Field(default=None, ge=0, le=50, examples=[2])
+    living_area_sqm: float = Field(ge=_AREA_MIN, le=_AREA_MAX, examples=[72.0])
+    rooms: float | None = Field(default=None, ge=_ROOMS_MIN, le=_ROOMS_MAX, examples=[3.0])
+    floor: int | None = Field(default=None, ge=int(_FLOOR_MIN), le=int(_FLOOR_MAX), examples=[2])
     postal_code: str | None = Field(default=None, max_length=10, examples=["10437"])
     district: str | None = Field(default=None, max_length=100, examples=["Pankow"])
     quarter: str | None = Field(default=None, max_length=100, examples=["Prenzlauer Berg"])
     energy_efficiency_class: str | None = Field(default=None, max_length=4, examples=["C"])
+
+
+class CityLocations(BaseModel):
+    districts: list[str]
+    quarters: list[str]
 
 
 class PredictResponse(BaseModel):

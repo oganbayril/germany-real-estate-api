@@ -8,6 +8,7 @@ model has been trained yet the app still starts (and ``/health`` reports it), bu
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -25,6 +26,7 @@ from sqlalchemy.orm import Session
 from realestate import __version__
 from realestate.api.deps import get_predictor
 from realestate.api.schemas import (
+    CityLocations,
     HealthResponse,
     LastScrape,
     ModelInfoResponse,
@@ -33,6 +35,7 @@ from realestate.api.schemas import (
     PriceSummary,
     StatsResponse,
 )
+from realestate.data.features import quarter_from_address
 from realestate.db.models import Listing, ScrapeRun
 from realestate.db.session import session_scope
 from realestate.model.predict import PricePredictor
@@ -88,6 +91,34 @@ def predict(request: Request, body: PredictRequest, predictor: PredictorDep) -> 
         model_version=result.model_version,
         typical_error_pct=holdout.get("median_ape_pct"),
     )
+
+
+@app.get("/locations", response_model=dict[str, CityLocations])
+@limiter.limit("60/minute")
+def locations(request: Request) -> dict[str, CityLocations]:
+    """Real district/quarter values seen per city -- feeds the demo page's
+    dropdowns so a request can only ever name a place the model actually knows
+    about, instead of free text."""
+    with session_scope() as session:
+        rows = session.execute(
+            select(Listing.city, Listing.district, Listing.address).where(
+                Listing.listing_status == "active"
+            )
+        ).all()
+
+    districts: dict[str, set[str]] = defaultdict(set)
+    quarters: dict[str, set[str]] = defaultdict(set)
+    for city, district, address in rows:
+        if district:
+            districts[city].add(district)
+        quarter = quarter_from_address(address)
+        if quarter:
+            quarters[city].add(quarter)
+
+    return {
+        city: CityLocations(districts=sorted(districts[city]), quarters=sorted(quarters[city]))
+        for city in sorted(set(districts) | set(quarters))
+    }
 
 
 @app.get("/model", response_model=ModelInfoResponse)

@@ -113,19 +113,19 @@
 
     <div class="row">
       <div>
-        <label for="area">Living area (m²)</label>
-        <input id="area" type="number" min="10" max="1000" step="1" value="75">
+        <label for="area">Living area (m²) <span class="hint">15-400</span></label>
+        <input id="area" type="number" min="15" max="400" step="1" value="75">
       </div>
       <div>
-        <label for="rooms">Rooms</label>
-        <input id="rooms" type="number" min="1" max="20" step="0.5" value="3">
+        <label for="rooms">Rooms <span class="hint">1-12</span></label>
+        <input id="rooms" type="number" min="1" max="12" step="0.5" value="3">
       </div>
     </div>
 
     <div class="row">
       <div>
-        <label for="floor">Floor <span class="hint">(optional)</span></label>
-        <input id="floor" type="number" min="0" max="50" step="1" placeholder="e.g. 2">
+        <label for="floor">Floor <span class="hint">(optional, 0-40)</span></label>
+        <input id="floor" type="number" min="0" max="40" step="1" placeholder="e.g. 2">
       </div>
       <div>
         <label for="energy">Energy class <span class="hint">(optional)</span></label>
@@ -137,11 +137,11 @@
       </div>
     </div>
 
-    <label for="district">District <span class="hint">(optional, e.g. Pankow)</span></label>
-    <input id="district" type="text" placeholder="Pankow">
+    <label for="district">District <span class="hint">(optional)</span></label>
+    <select id="district"><option value="">— any —</option></select>
 
-    <label for="quarter">Quarter <span class="hint">(optional, e.g. Prenzlauer Berg)</span></label>
-    <input id="quarter" type="text" placeholder="Prenzlauer Berg">
+    <label for="quarter">Quarter <span class="hint">(optional)</span></label>
+    <select id="quarter"><option value="">— any —</option></select>
 
     <button id="go">Estimate price</button>
     <div id="error"></div>
@@ -164,6 +164,35 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const fmtEUR = (n) => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(n);
+
+// Real district/quarter values per city, from the scraped data itself -- keeps
+// these as picklists instead of free text nobody can be trusted to fill in sensibly.
+let locationsByCity = {};
+
+function fillSelect(select, options) {
+  const previous = select.value;
+  select.innerHTML = '<option value="">— any —</option>';
+  for (const opt of options) {
+    const el = document.createElement('option');
+    el.value = opt;
+    el.textContent = opt;
+    select.appendChild(el);
+  }
+  if (options.includes(previous)) select.value = previous;
+}
+
+function refreshLocationOptions() {
+  const loc = locationsByCity[$('city').value];
+  fillSelect($('district'), loc?.districts ?? []);
+  fillSelect($('quarter'), loc?.quarters ?? []);
+}
+
+fetch('/locations')
+  .then((r) => (r.ok ? r.json() : {}))
+  .then((data) => { locationsByCity = data; refreshLocationOptions(); })
+  .catch(() => { /* dropdowns just stay at "— any —" */ });
+
+$('city').addEventListener('change', refreshLocationOptions);
 
 $('go').addEventListener('click', async () => {
   const body = {
@@ -192,7 +221,11 @@ $('go').addEventListener('click', async () => {
     if (resp.status === 429) throw new Error('Too many requests — please wait a moment and try again.');
     if (resp.status === 422) {
       const detail = await resp.json();
-      throw new Error(detail.detail?.[0]?.msg || 'Please check the values you entered.');
+      const first = detail.detail?.[0];
+      const field = first?.loc?.[first.loc.length - 1];
+      throw new Error(
+        first ? `${field}: ${first.msg}` : 'Please check the values you entered.'
+      );
     }
     if (!resp.ok) throw new Error('Something went wrong (HTTP ' + resp.status + ').');
 

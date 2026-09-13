@@ -71,6 +71,12 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClie
                     price_eur=300_000 + i * 25_000,
                     living_area_sqm=60 + i,
                     listing_status="active",
+                    district="Pankow" if city == "berlin" else "Nord",
+                    address=(
+                        "Str. 1, Prenzlauer Berg, Pankow (10437)"
+                        if city == "berlin"
+                        else "Nord (20095)"
+                    ),
                 )
             )
         seed.add(
@@ -139,6 +145,31 @@ def test_predict_validation_error(client: TestClient) -> None:
     assert resp.status_code == 422
 
 
+@pytest.mark.parametrize("area", [1, 2, 5, 14])
+def test_predict_rejects_unrealistically_small_area(client: TestClient, area: float) -> None:
+    resp = client.post("/predict", json={"city": "berlin", "living_area_sqm": area})
+    assert resp.status_code == 422
+
+
+@pytest.mark.parametrize("area", [15, 400])
+def test_predict_accepts_boundary_area(client: TestClient, area: float) -> None:
+    resp = client.post("/predict", json={"city": "berlin", "living_area_sqm": area})
+    assert resp.status_code == 200
+
+
+@pytest.mark.parametrize("rooms", [0, 0.5, 13, 20])
+def test_predict_rejects_unrealistic_room_count(client: TestClient, rooms: float) -> None:
+    resp = client.post("/predict", json={"city": "berlin", "living_area_sqm": 70, "rooms": rooms})
+    assert resp.status_code == 422
+
+
+def test_predict_rejects_absurd_floor(client: TestClient) -> None:
+    resp = client.post(
+        "/predict", json={"city": "berlin", "living_area_sqm": 70, "floor": 500}
+    )
+    assert resp.status_code == 422
+
+
 def test_predict_rejects_overlong_string(client: TestClient) -> None:
     resp = client.post("/predict", json={"city": "x" * 5000, "living_area_sqm": 70})
     assert resp.status_code == 422
@@ -172,6 +203,17 @@ def test_stats_endpoint(client: TestClient) -> None:
     assert body["by_city"]["berlin"] == 6
     assert body["price_eur"]["min"] == 300_000
     assert body["last_scrape"]["status"] == "success"
+
+
+def test_locations_grouped_per_city_from_real_data(client: TestClient) -> None:
+    body = client.get("/locations").json()
+
+    assert body["berlin"]["districts"] == ["Pankow"]
+    assert body["berlin"]["quarters"] == ["Prenzlauer Berg"]
+    # "Nord (20095)" has no street/quarter segment to parse out
+    assert body["hamburg"]["districts"] == ["Nord"]
+    assert body["hamburg"]["quarters"] == []
+    assert body["leipzig"]["districts"] == ["Nord"]
 
 
 def test_predict_503_without_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

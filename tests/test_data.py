@@ -12,6 +12,7 @@ from realestate.data.features import (
     FEATURE_COLUMNS,
     TARGET,
     build_feature_frame,
+    quarter_from_address,
     target_to_price,
 )
 
@@ -120,6 +121,14 @@ def test_quarter_extracted_from_address() -> None:
     out = build_feature_frame(df)
     assert out["quarter"].tolist()[:2] == ["Moabit", "Winterhude"]
     assert pd.isna(out["quarter"].iloc[2])
+
+
+def test_quarter_from_address_direct() -> None:
+    """The scalar helper the API's /locations endpoint reuses for its dropdown."""
+    assert quarter_from_address("Berlichingenstraße 15, Moabit, Mitte (10553)") == "Moabit"
+    assert quarter_from_address("Mitte (10559)") is None
+    assert quarter_from_address(None) is None
+    assert quarter_from_address(42) is None
 
 
 def test_single_row_inference_path_has_no_target() -> None:

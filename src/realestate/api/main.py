@@ -10,11 +10,12 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Annotated
 
 import numpy as np
 from fastapi import Depends, FastAPI, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -58,10 +59,12 @@ app = FastAPI(title="Germany Real-Estate Price API", version=__version__, lifesp
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+_INDEX_HTML = (Path(__file__).parent / "static" / "index.html").read_text(encoding="utf-8")
 
-@app.get("/", include_in_schema=False)
-def root() -> RedirectResponse:
-    return RedirectResponse(url="/docs")
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+def root() -> str:
+    return _INDEX_HTML
 
 
 @app.get("/health", response_model=HealthResponse)

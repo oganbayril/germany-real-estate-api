@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Germany Real-Estate Price Predictor</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --text: #1a1d23;
+    --muted: #667085;
+    --border: #e3e6eb;
+    --accent: #2f6fed;
+    --accent-text: #ffffff;
+    --error: #c0322d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a;
+      --card: #1d2026;
+      --text: #edeef1;
+      --muted: #9aa2b1;
+      --border: #2c3038;
+      --accent: #5b8def;
+      --accent-text: #0c1220;
+      --error: #ff8a80;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+    padding: 40px 16px 80px;
+  }
+  main { width: 100%; max-width: 560px; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); margin: 0 0 28px; line-height: 1.5; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+  label { display: block; font-size: 0.85rem; font-weight: 600; margin: 16px 0 6px; }
+  label:first-of-type { margin-top: 0; }
+  .hint { font-weight: 400; color: var(--muted); }
+  input, select {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    font-size: 0.95rem;
+  }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  button {
+    margin-top: 22px;
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    background: var(--accent);
+    color: var(--accent-text);
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.6; cursor: default; }
+  #result { display: none; }
+  #result.show { display: block; }
+  .price { font-size: 2rem; font-weight: 700; }
+  .price-sub { color: var(--muted); margin-top: 2px; }
+  .note {
+    margin-top: 14px;
+    font-size: 0.85rem;
+    color: var(--muted);
+    line-height: 1.5;
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+  }
+  #error { display: none; color: var(--error); font-size: 0.9rem; margin-top: 14px; }
+  #error.show { display: block; }
+  footer { text-align: center; color: var(--muted); font-size: 0.8rem; line-height: 1.8; }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+<main>
+  <h1>🏠 Germany Real-Estate Price Predictor</h1>
+  <p class="subtitle">
+    A portfolio project: an XGBoost model trained on apartment listings scraped
+    from Immowelt, served by a live API. Fill in a flat's details and get an
+    instant price estimate — no coding required.
+  </p>
+
+  <div class="card">
+    <label for="city">City</label>
+    <select id="city">
+      <option value="berlin">Berlin</option>
+      <option value="hamburg">Hamburg</option>
+      <option value="muenchen">München</option>
+      <option value="koeln">Köln</option>
+      <option value="leipzig">Leipzig</option>
+    </select>
+
+    <div class="row">
+      <div>
+        <label for="area">Living area (m²)</label>
+        <input id="area" type="number" min="10" max="1000" step="1" value="75">
+      </div>
+      <div>
+        <label for="rooms">Rooms</label>
+        <input id="rooms" type="number" min="1" max="20" step="0.5" value="3">
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label for="floor">Floor <span class="hint">(optional)</span></label>
+        <input id="floor" type="number" min="0" max="50" step="1" placeholder="e.g. 2">
+      </div>
+      <div>
+        <label for="energy">Energy class <span class="hint">(optional)</span></label>
+        <select id="energy">
+          <option value="">— unknown —</option>
+          <option>A+</option><option>A</option><option>B</option><option>C</option>
+          <option>D</option><option>E</option><option>F</option><option>G</option><option>H</option>
+        </select>
+      </div>
+    </div>
+
+    <label for="district">District <span class="hint">(optional, e.g. Pankow)</span></label>
+    <input id="district" type="text" placeholder="Pankow">
+
+    <label for="quarter">Quarter <span class="hint">(optional, e.g. Prenzlauer Berg)</span></label>
+    <input id="quarter" type="text" placeholder="Prenzlauer Berg">
+
+    <button id="go">Estimate price</button>
+    <div id="error"></div>
+  </div>
+
+  <div class="card" id="result">
+    <div class="price" id="price">—</div>
+    <div class="price-sub" id="priceSub"></div>
+    <div class="note" id="note"></div>
+  </div>
+
+  <footer>
+    Estimates are for demonstration only — not real valuation advice.
+    See the <a href="/model">model card</a> for training data, real metrics, and limitations.<br>
+    <a href="/docs">API docs</a> ·
+    <a href="https://github.com/oganbayril/germany-real-estate-api">source on GitHub</a>
+  </footer>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const fmtEUR = (n) => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(n);
+
+$('go').addEventListener('click', async () => {
+  const body = {
+    city: $('city').value,
+    living_area_sqm: Number($('area').value),
+    rooms: $('rooms').value ? Number($('rooms').value) : undefined,
+    floor: $('floor').value ? Number($('floor').value) : undefined,
+    energy_efficiency_class: $('energy').value || undefined,
+    district: $('district').value || undefined,
+    quarter: $('quarter').value || undefined,
+  };
+
+  $('go').disabled = true;
+  $('go').textContent = 'Estimating…';
+  $('error').classList.remove('show');
+  $('result').classList.remove('show');
+
+  try {
+    const resp = await fetch('/predict', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    if (resp.status === 503) throw new Error('No model is loaded right now — try again later.');
+    if (resp.status === 429) throw new Error('Too many requests — please wait a moment and try again.');
+    if (resp.status === 422) {
+      const detail = await resp.json();
+      throw new Error(detail.detail?.[0]?.msg || 'Please check the values you entered.');
+    }
+    if (!resp.ok) throw new Error('Something went wrong (HTTP ' + resp.status + ').');
+
+    const data = await resp.json();
+    $('price').textContent = fmtEUR(data.predicted_price_eur);
+    $('priceSub').textContent = data.predicted_price_per_sqm_eur
+      ? fmtEUR(data.predicted_price_per_sqm_eur) + ' / m²'
+      : '';
+    $('note').textContent = 'Model ' + data.model_version +
+      ' — typically within ±' + Math.round(data.typical_error_pct) + '% on held-out data.';
+    $('result').classList.add('show');
+  } catch (err) {
+    $('error').textContent = err.message;
+    $('error').classList.add('show');
+  } finally {
+    $('go').disabled = false;
+    $('go').textContent = 'Estimate price';
+  }
+});
+</script>
+</body>
+</html>

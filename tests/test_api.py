@@ -99,10 +99,12 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClie
     engine.dispose()
 
 
-def test_root_redirects_to_docs(client: TestClient) -> None:
-    resp = client.get("/", follow_redirects=False)
-    assert resp.status_code in (302, 307)
-    assert resp.headers["location"] == "/docs"
+def test_root_serves_demo_page(client: TestClient) -> None:
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]
+    assert "Estimate price" in resp.text
+    assert "/predict" in resp.text
 
 
 def test_health_reports_model(client: TestClient) -> None:

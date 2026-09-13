@@ -139,12 +139,19 @@ scheduled scraper and light tuning are the obvious next gains.
 `app.state`; if none is trained yet the app still serves and `/predict` returns
 503.
 
+**`GET /` is a small no-code demo page** (`api/static/index.html`) — a form for
+city/area/rooms/etc. that calls `/predict` and shows the price. That's the
+link to hand a non-technical visitor (recruiter, LinkedIn); `/docs` is FastAPI's
+auto-generated interactive schema, for anyone who wants to see the raw API.
+
 | Route | Purpose |
 |-------|---------|
+| `GET /` | interactive demo page (fill a form, get a price) |
 | `POST /predict` | listing attributes → predicted price, €/m², model version, the model's typical % error |
 | `GET /model` | version, metrics, feature list, training row count — a model card over HTTP |
 | `GET /stats` | listing counts by city, price percentiles, last scrape — straight from the DB |
 | `GET /health` | liveness + whether a model is loaded |
+| `GET /docs` | interactive OpenAPI/Swagger UI |
 
 ```bash
 curl -s localhost:8000/predict -H 'content-type: application/json' \

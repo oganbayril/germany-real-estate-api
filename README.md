@@ -8,20 +8,20 @@ Portfolio project demonstrating a full ML deployment: periodic data collection,
 a trained regression model, and a served prediction API — deployed on a Hetzner
 VPS with plain systemd, native Postgres, Caddy/TLS.
 
-**Live:** <https://germany-real-estate.duckdns.org/health> · `/predict` · `/model` · `/stats`
+**Live:** <https://germany-real-estate.duckdns.org> — a no-code demo page (fill
+in a flat's details, get a price). Also `/docs`, `/predict`, `/model`, `/stats`.
 See [MODEL_CARD.md](MODEL_CARD.md) for what the model does and doesn't do.
 
-The model currently trains on the bundled 180-row sample — Immowelt's DataDome
-throttles the scraper hard (see [deploy/README.md](deploy/README.md)), so the
-real dataset accumulates slowly from a rate-limited local scrape.
+The scraper collects listings gently (5 search URLs/city, 25-45s between
+requests, a 2-week URL-discovery cache) since Immowelt's DataDome bot-protection
+scores IPs over time; the model retrains automatically once enough real data
+has accumulated, otherwise it serves a bundled 180-row sample bootstrap.
 
 ```mermaid
 flowchart LR
-    subgraph pc["dev PC (residential IP)"]
-        scrape["realestate-scrape<br/>(Mon/Thu task)"]
-    end
     subgraph vps["Hetzner VPS"]
         direction TB
+        scrape["realestate-scrape<br/>(Mon/Thu timer, gentle)"]
         pg[("Postgres")]
         train["realestate-train<br/>(Sat timer, guarded)"]
         models[["models/&lt;ts&gt;/<br/>model.joblib"]]
@@ -30,7 +30,7 @@ flowchart LR
         backup["pg_dump<br/>(nightly)"]
     end
     immowelt["immowelt.de<br/>sitemaps + search pages"] -->|"httpx, rate-limited,<br/>robots-aware"| scrape
-    scrape -->|"SSH tunnel :5432"| pg
+    scrape --> pg
     pg --> train
     train --> models
     train -.->|"restart on success"| api
@@ -38,7 +38,7 @@ flowchart LR
     pg --> api
     pg --> backup
     api --> caddy
-    caddy -->|"HTTPS"| client(["client<br/>POST /predict"])
+    caddy -->|"HTTPS"| client(["client<br/>browser / POST /predict"])
 ```
 
 ## Status
@@ -162,13 +162,13 @@ curl -s localhost:8000/predict -H 'content-type: application/json' \
 
 Single Hetzner VPS, plain systemd (no Docker). `bash deploy/setup.sh` on a fresh
 Debian/Ubuntu box provisions Caddy (auto-HTTPS), native Postgres, the API service,
-a weekly retrain timer (restarts the API on success), and nightly `pg_dump`.
-`deploy/update.sh` ships a new `main`.
+and timers for scraping (Mon/Thu, gentle), retraining (Sat, restarts the API on
+success), and nightly `pg_dump`. `deploy/update.sh` ships a new `main`.
 
-The **scraper runs on the dev PC**, not the VPS — Immowelt's DataDome blocks
-Hetzner's datacenter ASN. A scheduled `deploy/scrape_local.ps1` tunnels to the VPS
-Postgres over SSH and scrapes into it from a residential connection. Full runbook,
-schedules, and the Caddy-over-nginx rationale: **[deploy/README.md](deploy/README.md)**.
+A PC-side fallback scraper (`deploy/scrape_local.ps1`, tunnels to the VPS
+Postgres over SSH) exists in case the VPS ever gets IP-throttled by DataDome —
+see [deploy/README.md](deploy/README.md) for when and how to switch to it, the
+full runbook, schedules, and the Caddy-over-nginx rationale.
 
 Hardening: API runs sandboxed (`ProtectSystem=strict`, scoped `ReadWritePaths`,
 syscall filter) because the model artifact is `joblib`/pickle; `slowapi` rate

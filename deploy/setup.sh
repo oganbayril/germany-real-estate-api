@@ -73,9 +73,7 @@ sudo -u "$APP_USER" bash -c "cd '$APP_DIR' && set -a && . ./.env && set +a && ./
 echo "==> systemd units"
 cp "$APP_DIR"/deploy/realestate-*.service "$APP_DIR"/deploy/realestate-*.timer /etc/systemd/system/
 systemctl daemon-reload
-# NOTE: realestate-scrape.timer is installed but NOT enabled -- DataDome blocks
-# the datacenter IP, so the scrape runs from the dev PC (see deploy/README.md).
-systemctl enable --now realestate-train.timer realestate-backup.timer
+systemctl enable --now realestate-scrape.timer realestate-train.timer realestate-backup.timer
 systemctl enable --now realestate-api.service \
   || echo "  !! api did not start -- inspect: journalctl -u realestate-api -xe   (setup continues)"
 
@@ -88,8 +86,9 @@ cat <<EOF
 done.
   - point ${RE_PUBLIC_DOMAIN} at this host's IP (A record) if not already
   - edit $APP_DIR/.env: set RE_SMTP_PASSWORD, confirm RE_PUBLIC_DOMAIN
-  - first data + model:
-      sudo systemctl start realestate-scrape.service   # ~35 min
-      sudo systemctl start realestate-train.service
+  - scrape + train run on their timers (Mon/Thu, Sat); to get data now instead
+    of waiting:
+      sudo systemctl start realestate-scrape.service   # ~15-25 min
+      sudo systemctl start realestate-train.service    # once >= RE_MIN_TRAIN_ROWS
   - check:  systemctl status realestate-api  &&  curl -s https://${RE_PUBLIC_DOMAIN}/health
 EOF

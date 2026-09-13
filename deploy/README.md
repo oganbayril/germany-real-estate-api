@@ -8,21 +8,20 @@ other services already on the box.
                          ┌───────────────── VPS ─────────────────┐
    internet  ──TLS──►  Caddy (:443)  ──►  uvicorn (127.0.0.1:8000)
                          │                      │
-                         │                 Postgres (localhost)
-                         │                      ▲
-              realestate-train.timer  ──────────┤  (Sat, retrains → restarts API)
-              realestate-backup.timer           │  (nightly pg_dump, keep 7)
-                         └──────────────────────┼───────────────────────┘
-                                                │  SSH tunnel :15432→:5432
-   dev PC (residential IP) ──────────────────────┘
-     GermanyRealEstate-Scrape task (Mon/Thu) → realestate-scrape run
+              realestate-scrape.timer  ───►  Postgres (localhost)
+              (Mon/Thu, gentle: 5 urls/city,  │      ▲
+               25-45s delay, 14d URL cache)    │      │
+              realestate-train.timer  ─────────┘      │
+              (Sat, retrains → restarts API)           │
+              realestate-backup.timer ─────────────────┘
+              (nightly pg_dump, keep 7)
+                         └────────────────────────────────────────┘
 ```
 
-**Why the scraper is on the PC, not the VPS:** Immowelt is behind DataDome, which
-blocks Hetzner's datacenter ASN — from the VPS it serves stripped pages then 403s.
-Search pages load fine from a residential connection, so the scrape runs on the
-dev PC and writes into the VPS Postgres over an SSH tunnel. (Same pattern as the
-`turkey-food-inflation` local scraper vs Şok.) Everything else stays on the VPS.
+Everything, including the scraper, runs on the VPS. `deploy/scrape_local.ps1` +
+`deploy/register_scrape_task.ps1` (a PC-side scraper over an SSH tunnel to the
+VPS Postgres) still exist as a documented fallback — see "If the VPS ever gets
+blocked" below — but aren't the default anymore.
 
 ## Prerequisites
 
@@ -49,58 +48,68 @@ Then, by hand:
 ```bash
 sudoedit /opt/realestate/.env               # set RE_PUBLIC_DOMAIN, RE_SMTP_PASSWORD
 systemctl restart realestate-api caddy
-systemctl disable --now realestate-scrape.timer   # scraper runs on the PC, not here
 curl -s https://<domain>/health
 ```
 
-Then set up the local scraper (below) and run it once for the first dataset;
-`realestate-train` runs on its Saturday timer, or `systemctl start
-realestate-train.service` to make the first model now.
+`realestate-scrape.timer` and `realestate-train.timer` are both enabled by
+`setup.sh`. To get the first dataset + model without waiting for Monday:
 
-## Local scraper (dev PC)
-
-`realestate-scrape` runs from a residential connection because DataDome blocks the
-VPS. On the PC, in the repo:
-
-```powershell
-Copy-Item deploy\.scrape_local.env.example deploy\.scrape_local.env
-# edit it: RE_DB_PASSWORD from the VPS (grep RE_DATABASE_URL /opt/realestate/.env),
-#          RE_SMTP_PASSWORD (the shared Gmail app password)
-
-powershell -File deploy\scrape_local.ps1        # first run, ~35 min
-powershell -File deploy\register_scrape_task.ps1   # then: Mon/Thu, "start when available"
+```bash
+systemctl start realestate-scrape.service   # ~15-25 min, gentle pacing
+systemctl start realestate-train.service    # once the DB has >= RE_MIN_TRAIN_ROWS
 ```
-
-`scrape_local.ps1` opens an SSH tunnel (`127.0.0.1:15432` → VPS `:5432`), runs
-`realestate-scrape run --email` against it, and closes the tunnel. Needs your SSH
-key already authorised on the VPS (it is). Logs to `deploy/scrape_local.log`.
 
 ## Operations
 
 | Task | Command |
 |------|---------|
-| Deploy latest `main` (VPS) | `bash /opt/realestate/deploy/update.sh` |
+| Deploy latest `main` | `bash /opt/realestate/deploy/update.sh` |
 | API logs | `journalctl -u realestate-api -f` |
+| Scrape now | `systemctl start realestate-scrape.service` |
 | Retrain now | `systemctl start realestate-train.service` |
 | Timer schedule | `systemctl list-timers 'realestate-*'` |
-| Scrape now (PC) | `Start-ScheduledTask -TaskName 'GermanyRealEstate-Scrape'` or run `scrape_local.ps1` |
-| Last scrape (PC) | tail `deploy/scrape_local.log` |
+| Last scrape log | `journalctl -u realestate-scrape -n 100` |
 | Restore a backup | `pg_restore -d 'postgresql://realestate:…@localhost/realestate' -c /opt/realestate/backups/realestate-<stamp>.dump` |
 
 ## Schedules
 
-- **Scrape** — PC scheduled task, `Mon,Thu 04:00`, "start when available" so it
-  catches up whenever the PC is next on. Deliberately small: `≈5` search
-  URLs/city, `25–45 s` between requests, and the sitemap-derived URL pool is
-  cached for `RE_SCRAPE_DISCOVERY_CACHE_DAYS` (14) so a run is ~25 real requests
-  total. DataDome scores IPs over time — raise the caps once a steady dataset
-  exists and the IP has cooled. The discovery cache lives at
-  `data/immowelt_search_urls.json` on the PC; delete it to force a rebuild.
+- **Scrape** — VPS timer, `Mon,Thu 03:00` + up to 6h jitter, `Persistent=true`
+  (catches up a missed run on next boot/enable). Deliberately gentle:
+  `RE_SCRAPE_MAX_SEARCH_URLS_PER_CITY=5`, `RE_SCRAPE_DELAY_MIN_S=25` /
+  `_MAX_S=45`, and the sitemap-derived URL pool is cached for
+  `RE_SCRAPE_DISCOVERY_CACHE_DAYS` (14) so a routine run is ~25 real requests,
+  skipping the sitemap walk entirely. A full 25-city-search run (2026-09-13)
+  landed 424 listings across all 5 cities with zero blocks — raise the caps
+  once there's a longer clean track record. The discovery cache lives at
+  `data/immowelt_search_urls.json`; delete it to force a rebuild.
 - **Retrain** — VPS, `Sat 04:00`. `realestate-train` refuses if the DB has
-  `< RE_MIN_TRAIN_ROWS` usable rows or the latest scrape run didn't succeed. On a
-  successful retrain it restarts `realestate-api` (≈2 s blip) so the new artifact
-  is picked up.
+  `< RE_MIN_TRAIN_ROWS` usable rows or the latest scrape run didn't succeed
+  (`blocked` status). A block that hits *after* real listings already landed is
+  recorded as `partial`, which still counts as retrain-eligible. On a successful
+  retrain it restarts `realestate-api` (≈2 s blip) so the new artifact is picked up.
 - **Backup** — VPS, nightly `02:30`, `pg_dump -Fc`, keeps the 7 newest.
+
+## If the VPS ever gets blocked
+
+`deploy/scrape_local.ps1` + `deploy/register_scrape_task.ps1` run the scraper
+from a PC instead, over an SSH tunnel to the VPS Postgres (`127.0.0.1:15432` →
+`:5432`) — same idea as the `turkey-food-inflation` project's local scraper for
+Şok. To switch to it: `systemctl disable --now realestate-scrape.timer` on the
+VPS, then on the PC:
+
+```powershell
+Copy-Item deploy\.scrape_local.env.example deploy\.scrape_local.env
+# edit it: RE_DB_PASSWORD from the VPS (grep RE_DATABASE_URL /opt/realestate/.env),
+#          RE_SMTP_PASSWORD (the shared Gmail app password)
+powershell -File deploy\scrape_local.ps1            # first run
+powershell -File deploy\register_scrape_task.ps1    # Mon/Thu, "start when available"
+```
+
+This was actually the setup from 2026-09-05 to 2026-09-13, believed necessary
+because of a DataDome block — that turned out to mostly be a schema bug
+(`expose_id` too short for real IDs, invisible on SQLite, fatal on Postgres).
+Fixed, and a full gentle scrape from the VPS then ran clean. Keeping this path
+documented in case real IP-based throttling shows up again later.
 
 `--email` sends a one-line summary via the shared Gmail app password
 (`RE_SMTP_*`); a blank password disables it. A scrape that fetches pages but

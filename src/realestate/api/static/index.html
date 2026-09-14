@@ -4,6 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Germany Real-Estate Price Predictor</title>
+<script>
+  // Apply a saved manual theme choice before first paint, so there's no flash
+  // of the wrong theme. Absence of a stored value means "system" -- no override.
+  (function () {
+    try {
+      var t = localStorage.getItem('theme');
+      if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+    } catch (e) { /* storage blocked (private mode etc.) -> just use system */ }
+  })();
+</script>
 <style>
   :root {
     color-scheme: light dark;
@@ -16,8 +26,9 @@
     --accent-text: #ffffff;
     --error: #c0322d;
   }
+  /* System dark mode, unless a manual "light" choice overrides it */
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
       --bg: #14161a;
       --card: #1d2026;
       --text: #edeef1;
@@ -28,6 +39,19 @@
       --error: #ff8a80;
     }
   }
+  /* Manual "dark" choice wins regardless of system preference */
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #14161a;
+    --card: #1d2026;
+    --text: #edeef1;
+    --muted: #9aa2b1;
+    --border: #2c3038;
+    --accent: #5b8def;
+    --accent-text: #0c1220;
+    --error: #ff8a80;
+  }
+  :root[data-theme="light"] { color-scheme: light; }
   * { box-sizing: border-box; }
   body {
     margin: 0;
@@ -56,11 +80,39 @@
     padding: 10px 12px;
     border-radius: 8px;
     border: 1px solid var(--border);
-    background: transparent;
+    background-color: var(--card);
     color: var(--text);
     font-size: 0.95rem;
   }
+  /* Native popup lists ignore inherited custom properties in most browsers,
+     so option colors need to be spelled out explicitly to match the theme. */
+  option {
+    background-color: var(--card);
+    color: var(--text);
+  }
   .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .theme-toggle {
+    display: flex;
+    justify-content: flex-end;
+    gap: 4px;
+    margin-bottom: 16px;
+  }
+  .theme-toggle button {
+    margin-top: 0;
+    width: auto;
+    padding: 6px 12px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted);
+  }
+  .theme-toggle button.active {
+    background: var(--accent);
+    color: var(--accent-text);
+    border-color: var(--accent);
+  }
   button {
     margin-top: 22px;
     width: 100%;
@@ -94,6 +146,12 @@
 </head>
 <body>
 <main>
+  <div class="theme-toggle" role="group" aria-label="Theme">
+    <button type="button" data-theme-choice="system">System</button>
+    <button type="button" data-theme-choice="light">Light</button>
+    <button type="button" data-theme-choice="dark">Dark</button>
+  </div>
+
   <h1>🏠 Germany Real-Estate Price Predictor</h1>
   <p class="subtitle">
     A portfolio project: an XGBoost model trained on apartment listings scraped
@@ -164,6 +222,38 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const fmtEUR = (n) => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(n);
+
+// Theme toggle: "system" (default) leaves data-theme unset so prefers-color-scheme
+// decides; "light"/"dark" pin an explicit choice, saved for next visit.
+const themeButtons = document.querySelectorAll('[data-theme-choice]');
+
+function applyThemeChoice(choice) {
+  if (choice === 'light' || choice === 'dark') {
+    document.documentElement.dataset.theme = choice;
+  } else {
+    delete document.documentElement.dataset.theme;
+  }
+  themeButtons.forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.themeChoice === choice);
+  });
+}
+
+let storedTheme = 'system';
+try {
+  storedTheme = localStorage.getItem('theme') || 'system';
+} catch (e) { /* storage blocked -> stays "system" */ }
+applyThemeChoice(storedTheme);
+
+themeButtons.forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const choice = btn.dataset.themeChoice;
+    applyThemeChoice(choice);
+    try {
+      if (choice === 'system') localStorage.removeItem('theme');
+      else localStorage.setItem('theme', choice);
+    } catch (e) { /* storage blocked -> choice still applies this session */ }
+  });
+});
 
 // Real district/quarter values per city, from the scraped data itself -- keeps
 // these as picklists instead of free text nobody can be trusted to fill in sensibly.

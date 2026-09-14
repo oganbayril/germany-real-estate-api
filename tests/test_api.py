@@ -164,9 +164,7 @@ def test_predict_rejects_unrealistic_room_count(client: TestClient, rooms: float
 
 
 def test_predict_rejects_absurd_floor(client: TestClient) -> None:
-    resp = client.post(
-        "/predict", json={"city": "berlin", "living_area_sqm": 70, "floor": 500}
-    )
+    resp = client.post("/predict", json={"city": "berlin", "living_area_sqm": 70, "floor": 500})
     assert resp.status_code == 422
 
 

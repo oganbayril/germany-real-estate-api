@@ -73,6 +73,7 @@ uv run realestate-scrape run --cities berlin --max-searches 5   # scrape
 uv run realestate-scrape run --dry-run                          # fetch + parse, no writes
 uv run realestate-scrape fetch-fixture <url>                    # save HTML for a parser test
 uv run realestate-train --help
+uv run realestate-compare-models --help   # benchmark XGBoost against baselines
 uv run uvicorn realestate.api.main:app --reload
 ```
 

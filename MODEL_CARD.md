@@ -48,6 +48,31 @@ expensive flats dominate the squared/absolute euro metrics.
 Feature importance is led by `rooms`, `city`, and `living_area_sqm`, then the
 location columns (`postal_prefix`, `district`, `quarter`).
 
+## Model selection
+
+XGBoost was the first thing tried and never actually benchmarked against
+alternatives — `realestate-compare-models` (`src/realestate/model/compare.py`)
+closes that gap. It fits a linear regression, a random forest, sklearn's
+`HistGradientBoostingRegressor`, and `XGBRegressor` on the same train/hold-out
+split with identical preprocessing, so only the estimator varies. Run against
+the live database (667 cleaned rows, one 20% hold-out):
+
+| model | median APE | MAPE | R² (euro) | MAE |
+|---|---|---|---|---|
+| linear regression | 23.1 % | 27.0 % | 0.684 | €156,000 |
+| random forest | 19.5 % | 22.5 % | 0.717 | €133,700 |
+| hist gradient boosting | **13.7 %** | **20.0 %** | **0.806** | **€112,500** |
+| XGBoost (deployed) | 15.2 % | 20.3 % | 0.783 | €117,700 |
+
+Both boosted-tree methods clearly beat linear regression and random forest,
+confirming gradient boosting is the right family of model for this
+data. `HistGradientBoostingRegressor` edges out `XGBRegressor` on every metric
+here — the gap is consistent, if modest. XGBoost stays in production for now:
+switching estimator families is a bigger change than a single comparison run
+justifies on its own, and neither model's hyperparameters have been tuned, so
+the ranking could plausibly flip. Revisit if the gap holds up as more data
+comes in, or after an actual tuning pass on both.
+
 ## Limitations & intended use
 
 - **Asking ≠ sold.** It models what sellers list, which runs above achieved

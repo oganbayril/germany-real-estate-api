@@ -28,6 +28,7 @@ dependencies = [
 [project.scripts]
 realestate-scrape = "realestate.scraper.cli:main"
 realestate-train = "realestate.model.train:main"
+realestate-compare-models = "realestate.model.compare:main"
 
 [dependency-groups]
 dev = [

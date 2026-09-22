@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     scrape_discovery_cache_days: float = 7.0
     scrape_user_agent: str = (
         "germany-real-estate-api/0.1 (personal portfolio project; "
-        "non-commercial; contact: oganby@gmail.com)"
+        "non-commercial; contact: oganbayril.dev@gmail.com)"
     )
     scrape_request_timeout_s: float = 30.0
 

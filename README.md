@@ -103,6 +103,12 @@ ImmoScout24) guard detail pages with DataDome. Everything stored comes from the
 results cards — price, area, rooms, floor, district, postal code, energy class.
 `scraper/immoscout.py` is a dormant placeholder (IS24 blocks plain HTTP entirely).
 
+Both portals do have official APIs, but neither is a free/self-serve option: IS24's
+developer portal gates access behind an approved business partnership, and
+Immowelt's API requires an existing (paid) Immowelt partnership and is meant for
+agencies pushing their own listings, not for pulling market-wide data. Scraping
+search-result cards was the only viable path for this project.
+
 ## Feature pipeline
 
 `data/clean.py` loads listings and drops the unmodellable (no price / no area),

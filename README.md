@@ -12,10 +12,11 @@ VPS with plain systemd, native Postgres, Caddy/TLS.
 in a flat's details, get a price). Also `/docs`, `/predict`, `/model`, `/stats`.
 See [MODEL_CARD.md](MODEL_CARD.md) for what the model does and doesn't do.
 
-The scraper collects listings gently (5 search URLs/city, 25-45s between
+The scraper collects listings gently (5 search URLs/city, 45-90s between
 requests, a 2-week URL-discovery cache) since Immowelt's DataDome bot-protection
-scores IPs over time; the model retrains automatically once enough real data
-has accumulated, otherwise it serves a bundled 180-row sample bootstrap.
+still throttles it partway through most runs even at this pace; the model
+retrains automatically once enough real data has accumulated, otherwise it
+serves a bundled 180-row sample bootstrap.
 
 ```mermaid
 flowchart LR

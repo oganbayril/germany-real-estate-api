@@ -23,7 +23,7 @@ bot wall). Fields therefore come from the results cards only.
 
 - **Scope:** Berlin, Hamburg, München, Köln, Leipzig.
 - **Target:** the listed **asking** price, not a transaction price.
-- **Current model** (`2026-09-13T23-37-44Z`): trained on **645 real scraped
+- **Current model** (`2026-10-03T04-43-15Z`): trained on **912 real scraped
   listings** across all 5 cities. The very first deployed model (until enough
   data existed) trained on the bundled `sample/listings_sample.csv` (180 rows,
   Berlin only) — that bootstrap path still exists for a fresh deployment with an
@@ -31,17 +31,17 @@ bot wall). Fields therefore come from the results cards only.
 
 ## Performance
 
-5-fold out-of-fold CV and a 20% hold-out, in euro terms (n = 645 total):
+5-fold out-of-fold CV and a 20% hold-out, in euro terms (n = 912 total):
 
-| metric | CV (n=516) | hold-out (n=129) |
+| metric | CV (n=729) | hold-out (n=183) |
 |---|---|---|
-| median abs. % error | 16.9 % | 15.5 % |
-| MAPE | 22.9 % | 19.7 % |
-| MAE | €141,500 | €122,600 |
-| R² (log price) | 0.78 | 0.83 |
-| R² (euro price) | 0.61 | 0.82 |
+| median abs. % error | 15.8 % | 17.8 % |
+| MAPE | 21.7 % | 21.0 % |
+| MAE | €121,954 | €137,983 |
+| R² (log price) | 0.80 | 0.85 |
+| R² (euro price) | 0.72 | 0.77 |
 
-Read: roughly **half of predictions land within ~16 %** of the asking price. The
+Read: roughly **half of predictions land within ~18 %** of the asking price. The
 gap between log-R² and euro-R² is the long right tail — a few large errors on
 expensive flats dominate the squared/absolute euro metrics.
 
@@ -54,24 +54,33 @@ XGBoost was the first thing tried and never actually benchmarked against
 alternatives — `realestate-compare-models` (`src/realestate/model/compare.py`)
 closes that gap. It fits a linear regression, a random forest, sklearn's
 `HistGradientBoostingRegressor`, and `XGBRegressor` on the same train/hold-out
-split with identical preprocessing, so only the estimator varies. Run against
-the live database (667 cleaned rows, one 20% hold-out):
+split with identical preprocessing, so only the estimator varies.
+
+First run, at 667 cleaned rows, actually favored the alternative:
+`HistGradientBoostingRegressor` edged out `XGBRegressor` on every metric. With
+more data the picture changed. Re-run against the live database (912 cleaned
+rows, one 20% hold-out):
 
 | model | median APE | MAPE | R² (euro) | MAE |
 |---|---|---|---|---|
-| linear regression | 23.1 % | 27.0 % | 0.684 | €156,000 |
-| random forest | 19.5 % | 22.5 % | 0.717 | €133,700 |
-| hist gradient boosting | **13.7 %** | **20.0 %** | **0.806** | **€112,500** |
-| XGBoost (deployed) | 15.2 % | 20.3 % | 0.783 | €117,700 |
+| linear regression | 24.2 % | 29.3 % | -0.44 | €223,300 |
+| random forest | 18.4 % | 22.8 % | 0.700 | €156,150 |
+| hist gradient boosting | **16.8 %** | 22.1 % | 0.723 | €145,040 |
+| XGBoost (deployed) | 17.6 % | **21.5 %** | **0.794** | **€140,230** |
 
-Both boosted-tree methods clearly beat linear regression and random forest,
-confirming gradient boosting is the right family of model for this
-data. `HistGradientBoostingRegressor` edges out `XGBRegressor` on every metric
-here — the gap is consistent, if modest. XGBoost stays in production for now:
-switching estimator families is a bigger change than a single comparison run
-justifies on its own, and neither model's hyperparameters have been tuned, so
-the ranking could plausibly flip. Revisit if the gap holds up as more data
-comes in, or after an actual tuning pass on both.
+Both boosted-tree methods still clearly beat linear regression and random
+forest — gradient boosting is the right family of model here. (Linear
+regression's R² actually went negative: ordinal-encoding four categorical
+columns and feeding the result to a linear model doesn't hold up as the
+category cardinality grows, which is a reason to not use that encoding for a
+linear model, not a data problem.) XGBoost and HistGradientBoosting are now a
+genuine toss-up — HistGradientBoosting still wins on median APE, but XGBoost
+leads on MAE, R², and MAPE, a reversal from the first run. That reversal is
+itself the lesson: the earlier "HistGradientBoosting is better" reading was
+mostly sample noise at 667 rows, not a real, stable gap. XGBoost stays in
+production. The database is still small for this kind of comparison, so this
+isn't a closed question — re-run `realestate-compare-models` again as more
+data accumulates, rather than trusting either single snapshot.
 
 ## Limitations & intended use
 

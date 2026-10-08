@@ -38,3 +38,6 @@ wheels/
 .ruff_cache/
 .coverage
 htmlcov/
+
+# Personal notes, not for the repo
+WHY.md

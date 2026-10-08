@@ -56,8 +56,11 @@ if [[ ! -f $APP_DIR/.env ]]; then
 else
   echo "    keeping existing $APP_DIR/.env"
 fi
-# shellcheck source=/dev/null
-set -a; source "$APP_DIR/.env"; set +a
+set -a
+# .env exists only on the server (written above), so shellcheck cannot follow it.
+# shellcheck disable=SC1091
+source "$APP_DIR/.env"
+set +a
 db_pass="$(printf '%s' "$RE_DATABASE_URL" | sed -E 's#.*realestate:([^@]+)@.*#\1#')"
 
 echo "==> postgres role + database"
@@ -77,9 +80,8 @@ systemctl enable --now realestate-scrape.timer realestate-train.timer realestate
 systemctl enable --now realestate-api.service \
   || echo "  !! api did not start -- inspect: journalctl -u realestate-api -xe   (setup continues)"
 
-echo "==> caddy"
-sed "s/REALESTATE_DOMAIN/${RE_PUBLIC_DOMAIN}/" "$APP_DIR/deploy/Caddyfile" > /etc/caddy/Caddyfile
-systemctl reload caddy || systemctl restart caddy
+echo "==> caddy (this site's file only; other sites on the box are left alone)"
+bash "$APP_DIR/deploy/install-caddy-site.sh" "$RE_PUBLIC_DOMAIN"
 
 cat <<EOF
 

@@ -41,7 +41,36 @@ git clone https://github.com/oganbayril/germany-real-estate-api.git /tmp/re && b
 user and `/opt/realestate/{data,models,backups}`, clones the repo, generates a DB
 password into `/opt/realestate/.env` (chmod 600), creates the Postgres role +
 database, `uv sync`, `alembic upgrade head`, installs and enables all units, and
-writes `/etc/caddy/Caddyfile` from the template.
+installs this site into Caddy (see "Caddy layout" below).
+
+### Caddy layout (shared box)
+
+Other projects run on the same VPS, each with its own Caddy site, so this repo
+owns **one file** and never the whole config:
+
+```
+/etc/caddy/Caddyfile                       import sites-enabled/*
+/etc/caddy/sites-enabled/realestate.conf   this site (from deploy/Caddyfile)
+/etc/caddy/sites-enabled/<other>.conf      other projects' sites, never touched
+/etc/caddy/backups/                        backups made by the install script
+```
+
+`deploy/install-caddy-site.sh <domain>` (run by `setup.sh`, safe to re-run):
+
+- stops, changing nothing, if another file in `sites-enabled/` already defines
+  the same domain (Caddy refuses duplicate sites);
+- if the main `Caddyfile` does not contain `import sites-enabled/*` (e.g. the
+  default one apt installs), backs it up to `/etc/caddy/backups/` and writes the
+  import-only version; if it does, leaves it alone;
+- writes `sites-enabled/realestate.conf`; if nothing changed, does nothing more;
+- runs `caddy validate`; on failure restores the previous files and does not
+  reload; on success reloads Caddy.
+
+Backups go to `/etc/caddy/backups/`, not `sites-enabled/`: everything in
+`sites-enabled/` is loaded, so a backup there would define the site twice.
+
+To test changes to the script without Caddy or root:
+`CADDY_DIR=/tmp/caddy-test NO_RELOAD=1 bash deploy/install-caddy-site.sh example.org`.
 
 Then, by hand:
 
@@ -125,10 +154,11 @@ next retrain from running on empty data.
 
 ## Why Caddy, not nginx
 
-This box serves one small API behind one TLS certificate. Caddy obtains and
+This site is one small API behind one TLS certificate. Caddy obtains and
 renews the certificate itself — there's no certbot, no renewal timer to rot, no
 post-renew reload hook. The whole reverse-proxy + TLS + security-header +
-body-size config is [one short file](Caddyfile) and needs only the stock Caddy
+body-size config is [one short file](Caddyfile), installed as one site file next
+to the other projects' sites (see "Caddy layout" above), and needs only the stock Caddy
 binary (rate limiting is done in the app with `slowapi`, so no Caddy plugins).
 nginx is the more common name on a CV, but here it would add certbot and its
 timer for no functional gain at this scale.

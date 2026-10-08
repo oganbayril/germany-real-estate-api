@@ -113,6 +113,13 @@ def test_root_serves_demo_page(client: TestClient) -> None:
     assert "/predict" in resp.text
 
 
+def test_root_accepts_head(client: TestClient) -> None:
+    # Link checkers and monitors send HEAD; it must not be 405.
+    resp = client.head("/")
+    assert resp.status_code == 200
+    assert resp.content == b""
+
+
 def test_health_reports_model(client: TestClient) -> None:
     body = client.get("/health").json()
     assert body["status"] == "ok"

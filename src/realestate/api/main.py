@@ -65,7 +65,9 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 _INDEX_HTML = (Path(__file__).parent / "static" / "index.html").read_text(encoding="utf-8")
 
 
-@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+# HEAD too, like /health: link checkers and monitors pointed at the homepage
+# send HEAD, and a GET-only route answers 405.
+@app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse, include_in_schema=False)
 def root() -> str:
     return _INDEX_HTML
 

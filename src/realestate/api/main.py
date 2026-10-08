@@ -70,7 +70,9 @@ def root() -> str:
     return _INDEX_HTML
 
 
-@app.get("/health", response_model=HealthResponse)
+# HEAD too: uptime monitors (e.g. UptimeRobot) check with HEAD by default, and a
+# GET-only route answers 405. The server drops the body for HEAD responses.
+@app.api_route("/health", methods=["GET", "HEAD"], response_model=HealthResponse)
 def health() -> HealthResponse:
     predictor: PricePredictor | None = getattr(app.state, "predictor", None)
     return HealthResponse(

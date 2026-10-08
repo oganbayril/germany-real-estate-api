@@ -120,6 +120,13 @@ def test_health_reports_model(client: TestClient) -> None:
     assert body["model_version"]
 
 
+def test_health_accepts_head(client: TestClient) -> None:
+    # Uptime monitors send HEAD; it must not be 405.
+    resp = client.head("/health")
+    assert resp.status_code == 200
+    assert resp.content == b""
+
+
 def test_predict_happy_path(client: TestClient) -> None:
     resp = client.post(
         "/predict",

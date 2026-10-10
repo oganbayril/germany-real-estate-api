@@ -63,14 +63,29 @@ owns **one file** and never the whole config:
   default one apt installs), backs it up to `/etc/caddy/backups/` and writes the
   import-only version; if it does, leaves it alone;
 - writes `sites-enabled/realestate.conf`; if nothing changed, does nothing more;
-- runs `caddy validate`; on failure restores the previous files and does not
-  reload; on success reloads Caddy.
+- makes sure `/var/log/caddy/realestate.log` exists, owned by `caddy`, mode 600,
+  and runs `caddy validate` **as the caddy user**; on failure restores the
+  previous files (and removes the log if it created it) and does not reload;
+- if Caddy is running, reloads it; a failed reload restores the previous files
+  and stops. It **never restarts** Caddy: a restart with a config that cannot
+  load would stop Caddy and every site on the box, while a failed reload keeps
+  the previous config running. If Caddy is not running (first install), it is
+  started.
 
 Backups go to `/etc/caddy/backups/`, not `sites-enabled/`: everything in
 `sites-enabled/` is loaded, so a backup there would define the site twice.
 
+Why validate as `caddy`, not root: validating opens the configured log files.
+As root it would create a missing log owned by root, which the running Caddy
+(user `caddy`) cannot open, so the reload would fail. (This happened when
+another site was added to this box; see the food-housing-spending-share
+deploy notes.) If a log exists but is not owned by `caddy`, the script stops
+before changing anything.
+
 To test changes to the script without Caddy or root:
-`CADDY_DIR=/tmp/caddy-test NO_RELOAD=1 bash deploy/install-caddy-site.sh example.org`.
+`CADDY_DIR=/tmp/caddy-test NO_RELOAD=1 bash deploy/install-caddy-site.sh example.org`
+(generation only), and `bash deploy/tests/test_install_caddy_site.sh` for the
+failure paths (fake `caddy` / `runuser` / `systemctl`, 32 checks).
 
 Then, by hand:
 

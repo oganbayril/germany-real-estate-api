@@ -75,6 +75,17 @@ def test_load_frame_blocks_after_failed_scrape(wired_scope: sessionmaker[Session
         _load_frame(from_sample=False)
 
 
+def test_load_frame_can_be_told_to_train_after_blocked_scrape(
+    wired_scope: sessionmaker[Session],
+) -> None:
+    with wired_scope() as s:
+        _seed_listings(s)
+        s.add(ScrapeRun(status="blocked", finished_at=utcnow(), cities=["berlin"]))
+        s.commit()
+
+    assert len(_load_frame(from_sample=False, allow_blocked_scrape=True)) > 0
+
+
 def test_load_frame_ok_after_successful_scrape(wired_scope: sessionmaker[Session]) -> None:
     with wired_scope() as s:
         _seed_listings(s)

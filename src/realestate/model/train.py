@@ -219,7 +219,7 @@ def check_not_worse(new_metrics: dict[str, Any], *, max_regression_pts: float) -
 # --------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------
-def _load_frame(from_sample: bool) -> pd.DataFrame:
+def _load_frame(from_sample: bool, *, allow_blocked_scrape: bool = False) -> pd.DataFrame:
     from realestate.data.clean import clean
 
     if from_sample:
@@ -241,6 +241,13 @@ def _load_frame(from_sample: bool) -> pd.DataFrame:
             .order_by(ScrapeRun.id.desc())
         ).first()
         if last is not None and last.status not in ("success", "partial"):
+            if allow_blocked_scrape:
+                log.warning(
+                    "latest scrape run #%d ended %r; training anyway (--allow-blocked-scrape)",
+                    last.id,
+                    last.status,
+                )
+                return clean(load_listings(session))
             raise TrainingBlocked(
                 f"latest scrape run #{last.id} ended {last.status!r}; refusing to retrain on it"
             )
@@ -276,6 +283,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--email", action="store_true", help="Email a one-line summary (VPS timer use)."
     )
     parser.add_argument(
+        "--allow-blocked-scrape",
+        action="store_true",
+        help="Train even if the latest scrape run was blocked/failed (manual runs only: "
+        "e.g. a code fix to ship on the data already in the database).",
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="Deploy even if the new model grades worse than the live one.",
@@ -299,7 +312,7 @@ def main(argv: list[str] | None = None) -> int:
     # is held to the production row floor.
     min_rows = 50 if args.from_sample else settings.min_train_rows
     try:
-        df = _load_frame(args.from_sample)
+        df = _load_frame(args.from_sample, allow_blocked_scrape=args.allow_blocked_scrape)
         log.info("training on %d cleaned rows", len(df))
         result = train_model(df, test_size=args.test_size, seed=args.seed, min_rows=min_rows)
         result.metadata["source"] = "sample" if args.from_sample else "database"

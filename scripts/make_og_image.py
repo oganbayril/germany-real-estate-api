@@ -9,9 +9,10 @@
 
 First run only: ``uv run --with playwright playwright install chromium``.
 
-Fills the form with a realistic example (city-wide Berlin: naming a premium
-district would need a price to match, and the model's location effect is
-weak), clicks "Estimate price" and waits for the model's answer. Then it lays
+Fills the form the way most visitors will: Berlin, 70 m2, 3 rooms, every
+optional field left at its default (no district, floor or energy class -- the
+"city only" case the model is graded on separately). Clicks "Estimate price"
+and waits for the model's answer. Then it lays
 the same page out wide -- title and result on the left, the filled form on the
 right -- keeping the page's own fonts, colours and spacing, grows the title
 and price as far as the frame allows, and screenshots at 2x (2400x1260).
@@ -96,8 +97,6 @@ def main() -> None:
         page.select_option("#city", "berlin")
         page.fill("#area", "70")
         page.fill("#rooms", "3")
-        page.fill("#floor", "2")
-        page.select_option("#energy", "C")
         page.click("#go")
         page.wait_for_selector("#result.show", timeout=15_000)
 

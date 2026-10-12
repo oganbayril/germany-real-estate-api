@@ -48,18 +48,19 @@ median % error is what `/predict` returns as `typical_error_pct` (the
 city-only one, below, for requests without location detail). They aren't
 copied here because the model retrains every week and this file would go stale.
 
-A recent snapshot, to show the scale: model `2026-10-10T04-03-47Z`, 1,197 rows
-(957 train / 240 hold-out), hold-out median APE 15.5 %, MAPE 21.2 %,
-R² (log) 0.84, R² (euro) 0.81. Read: roughly **half of predictions land within
-~15 %** of the asking price. The gap between log-R² and euro-R² is the long right
+A recent snapshot, to show the scale: model `2026-10-12T14-57-02Z`, 1,197 rows
+(957 train / 240 hold-out), hold-out median APE 16.7 %, MAPE 22.3 %,
+R² (log) 0.83, R² (euro) 0.77; city-only median APE 20.1 %. Read: roughly
+**half of predictions land within ~17 %** of the asking price when the
+district or postal code is known, ~20 % from the city alone. The gap between log-R² and euro-R² is the long right
 tail: a few large errors on expensive flats dominate the squared and absolute
 euro metrics.
 
 Hold-out is graded twice: on the listings as scraped, and again as **city-only
 requests** (`holdout_city_only` at `/model`: the same flats with district,
 quarter and postal code removed). The second is what the demo page sends unless
-a district is picked, and it is less precise (about 20 % median APE vs about
-17 % on 2026-10-12 data). `/predict` returns that city-only figure as
+a district is picked, and it is less precise (20.1 % median APE vs 16.7 % for
+model `2026-10-12T14-57-02Z`). `/predict` returns that city-only figure as
 `typical_error_pct` when a request has no location detail.
 
 Why it's graded separately: every scraped listing has a district and postal

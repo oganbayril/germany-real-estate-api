@@ -156,6 +156,12 @@
       examples to learn from. Averaged over every estimate, the miss is about
       <strong id="meanPct">—</strong>.
     </p>
+    <p id="cityOnly" hidden>
+      That's when the flat's district or postal code is known. Given only the
+      city, the model can't tell a pricey neighbourhood from a cheap one, so half
+      of estimates land within <strong id="cityOnlyPct">—</strong> instead.
+      Picking a district on the demo page helps.
+    </p>
     <p class="muted" id="testNote">
       How these numbers are measured: a test copy of the model learns from most
       of the listings and is graded on the rest, which it has never seen. The
@@ -294,6 +300,11 @@ function render(m) {
     $('example').textContent = 'For example, for a flat advertised at ' + fmtEUR(example) +
       ', a typical estimate would be somewhere between ' + fmtEUR(example * (1 - pct / 100)) +
       ' and ' + fmtEUR(example * (1 + pct / 100)) + '.';
+  }
+  const cityOnly = m.metrics?.holdout_city_only?.median_ape_pct;
+  if (cityOnly != null) {
+    $('cityOnlyPct').textContent = '±' + Math.round(cityOnly) + '%';
+    $('cityOnly').hidden = false;
   }
   if (holdout.mape_pct != null) $('meanPct').textContent = Math.round(holdout.mape_pct) + '%';
   // The graded copy is fit on the train split only; the deployed model is refit

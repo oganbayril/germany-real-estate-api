@@ -43,6 +43,35 @@ def synthetic_listings() -> pd.DataFrame:
     )
 
 
+CITY_RATES = {"muenchen": 8000, "berlin": 5000, "leipzig": 3000}  # EUR per m2
+
+
+@pytest.fixture
+def located_listings() -> pd.DataFrame:
+    """Like real scraped data: every listing has a district and postal code, and
+    both belong to exactly one city -- so location detail fully determines city."""
+    rng = np.random.default_rng(1)
+    rows = []
+    for city, rate in CITY_RATES.items():
+        for d in range(4):
+            district, plz = f"{city}-d{d}", f"{city[:1].upper()}{d}000"
+            district_factor = 0.85 + 0.1 * d
+            for _ in range(60):
+                area = rng.uniform(35, 140)
+                rows.append(
+                    {
+                        "city": city,
+                        "district": district,
+                        "postal_code": plz,
+                        "address": f"Street 1, {district} ({plz})",
+                        "living_area_sqm": area,
+                        "rooms": float(np.clip(round(area / 28), 1, 6)),
+                        "price_eur": area * rate * district_factor * rng.normal(1.0, 0.06),
+                    }
+                )
+    return pd.DataFrame(rows)
+
+
 @pytest.fixture(autouse=True)
 def _tmp_model_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(registry, "_models_root", lambda: tmp_path)
@@ -52,7 +81,7 @@ def _tmp_model_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 def test_train_model_reports_reasonable_metrics(synthetic_listings: pd.DataFrame) -> None:
     result = train_model(synthetic_listings, seed=0)
 
-    assert set(result.metrics) == {"cv", "holdout"}
+    assert set(result.metrics) == {"cv", "holdout", "holdout_city_only"}
     holdout = result.metrics["holdout"]
     # the synthetic signal is strong -> the model should be well within 25% MAPE
     assert holdout["mape_pct"] < 25
@@ -158,6 +187,31 @@ def test_predict_one_after_training(synthetic_listings: pd.DataFrame) -> None:
     assert 150_000 < out.price_eur < 1_500_000
     assert out.price_per_sqm_eur == pytest.approx(out.price_eur / 90.0, rel=1e-6)
     assert out.model_version == predictor.version
+
+
+@pytest.mark.parametrize("city", list(CITY_RATES))
+def test_city_only_request_prices_like_that_city(located_listings: pd.DataFrame, city: str) -> None:
+    # The demo page sends no postal code and defaults district/quarter to "any".
+    # Training rows always have them, so without location dropout the model never
+    # learned what "city only" means and priced every city about the same.
+    pipe = train_model(located_listings, seed=0).pipeline
+    request = pd.DataFrame([{"city": city, "living_area_sqm": 70.0, "rooms": 3.0}])
+    per_sqm = float(np.exp(pipe.predict(_features(request))[0])) / 70.0
+    assert per_sqm == pytest.approx(CITY_RATES[city], rel=0.15)
+
+
+def test_unseen_postal_code_falls_back_to_city_level(located_listings: pd.DataFrame) -> None:
+    pipe = train_model(located_listings, seed=0).pipeline
+    base = {"city": "muenchen", "living_area_sqm": 70.0, "rooms": 3.0}
+    city_only = pipe.predict(_features(pd.DataFrame([base])))[0]
+    unseen = pipe.predict(_features(pd.DataFrame([{**base, "postal_code": "99999"}])))[0]
+    assert unseen == pytest.approx(city_only, abs=1e-6)
+
+
+def test_metrics_grade_city_only_requests(located_listings: pd.DataFrame) -> None:
+    metrics = train_model(located_listings, seed=0).metrics
+    assert metrics["holdout_city_only"]["n"] == metrics["holdout"]["n"]
+    assert metrics["holdout_city_only"]["median_ape_pct"] < 20
 
 
 def _features(df: pd.DataFrame) -> pd.DataFrame:

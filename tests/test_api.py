@@ -236,6 +236,15 @@ def test_predict_happy_path(client: TestClient) -> None:
     assert body["typical_error_pct"] is not None
 
 
+def test_typical_error_reflects_how_much_location_was_given(client: TestClient) -> None:
+    metrics = api_main.app.state.predictor.metrics
+    base = {"city": "berlin", "living_area_sqm": 70, "rooms": 3}
+    city_only = client.post("/predict", json=base).json()
+    located = client.post("/predict", json={**base, "district": "Pankow"}).json()
+    assert city_only["typical_error_pct"] == metrics["holdout_city_only"]["median_ape_pct"]
+    assert located["typical_error_pct"] == metrics["holdout"]["median_ape_pct"]
+
+
 def test_predict_validation_error(client: TestClient) -> None:
     resp = client.post("/predict", json={"city": "berlin", "living_area_sqm": 5000})
     assert resp.status_code == 422

@@ -36,7 +36,11 @@ class PredictResponse(BaseModel):
     predicted_price_per_sqm_eur: float | None
     model_version: str
     typical_error_pct: float | None = Field(
-        description="Model's hold-out median absolute percentage error, as a rough ± guide."
+        description=(
+            "Model's hold-out median absolute percentage error, as a rough ± guide: "
+            "graded on city-only requests when this one has no postal code, district "
+            "or quarter."
+        )
     )
 
 

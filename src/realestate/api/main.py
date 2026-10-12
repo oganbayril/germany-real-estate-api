@@ -132,12 +132,17 @@ def health() -> HealthResponse:
 @limiter.limit("30/minute")
 def predict(request: Request, body: PredictRequest, predictor: PredictorDep) -> PredictResponse:
     result = predictor.predict_one(body.model_dump(exclude_none=True))
-    holdout = predictor.metrics.get("holdout", {})
+    # A request with no location detail is graded separately (it's what the demo
+    # page sends by default, and it is less precise); older models lack that grade.
+    city_only = not (body.postal_code or body.district or body.quarter)
+    metrics = predictor.metrics
+    grade = metrics.get("holdout_city_only") if city_only else None
+    grade = grade or metrics.get("holdout", {})
     return PredictResponse(
         predicted_price_eur=result.price_eur,
         predicted_price_per_sqm_eur=result.price_per_sqm_eur,
         model_version=result.model_version,
-        typical_error_pct=holdout.get("median_ape_pct"),
+        typical_error_pct=grade.get("median_ape_pct"),
     )
 
 

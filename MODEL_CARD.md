@@ -44,7 +44,8 @@ Metrics: median absolute % error, MAPE, MAE, RMSE, median absolute error, and
 R² on both log and euro scale. They are saved with every artifact
 (`models/<timestamp>/metrics.json`) and served live at
 [/model](https://germany-real-estate.duckdns.org/model), and the hold-out
-median % error is what `/predict` returns as `typical_error_pct`. They aren't
+median % error is what `/predict` returns as `typical_error_pct` (the
+city-only one, below, for requests without location detail). They aren't
 copied here because the model retrains every week and this file would go stale.
 
 A recent snapshot, to show the scale: model `2026-10-10T04-03-47Z`, 1,197 rows
@@ -53,6 +54,25 @@ R² (log) 0.84, R² (euro) 0.81. Read: roughly **half of predictions land within
 ~15 %** of the asking price. The gap between log-R² and euro-R² is the long right
 tail: a few large errors on expensive flats dominate the squared and absolute
 euro metrics.
+
+Hold-out is graded twice: on the listings as scraped, and again as **city-only
+requests** (`holdout_city_only` at `/model`: the same flats with district,
+quarter and postal code removed). The second is what the demo page sends unless
+a district is picked, and it is less precise (about 20 % median APE vs about
+17 % on 2026-10-12 data). `/predict` returns that city-only figure as
+`typical_error_pct` when a request has no location detail.
+
+Why it's graded separately: every scraped listing has a district and postal
+code, so a model fit on them alone never sees a request without them. Up to
+`2026-10-10T04-03-47Z` that is exactly what happened: given only a city, the
+model fell back to roughly one price everywhere (about 3,500-4,400 EUR/m2 for
+a 70 m2 flat in München and Leipzig alike) and a city-only hold-out median APE
+of ~27 %. Each fit now also trains on copies of its rows with location detail
+blanked (postal code; then quarter; then district), and an unseen location
+value encodes the same as a missing one, so it falls back to the coarser level
+it does know. Cost: hold-out error on fully located listings rose from ~16 % to
+~17.5 %, and differences between districts within a city come out flatter than
+the raw data shows.
 
 Feature importance is led by `rooms`, `city`, and `living_area_sqm`, then the
 location columns (`postal_prefix`, `district`, `quarter`).

@@ -5,9 +5,16 @@ pass the numeric + flag columns straight through, fit an XGBoost regressor on
 ``price_log``. XGBoost handles the NaNs in the numeric columns natively, so there
 is no imputation step.
 
+Every scraped listing has a district and postal code, but a request often has
+neither (the demo page has no postal-code field). So every fit also sees copies
+of its rows with location detail removed, coarsest last -- see
+``_with_location_dropout`` -- and an unseen location value is treated the same
+as a missing one: both fall back to what the model knows at the coarser level.
+
 Metrics are reported in euro terms (predictions are exponentiated back from log
 space): out-of-fold cross-validation on the training split for a stable estimate,
-plus a held-out test split. The artifact that gets saved is refit on *all* rows.
+plus a held-out test split, graded twice: as scraped, and as a city-only request.
+The artifact that gets saved is refit on *all* rows.
 """
 
 from __future__ import annotations
@@ -26,7 +33,7 @@ import sklearn
 import xgboost
 from sklearn.compose import ColumnTransformer
 from sklearn.metrics import r2_score
-from sklearn.model_selection import KFold, cross_val_predict, train_test_split
+from sklearn.model_selection import KFold, train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OrdinalEncoder
 from xgboost import XGBRegressor
@@ -63,11 +70,23 @@ class TrainResult:
     metadata: dict[str, Any]
 
 
+# Location detail a request may leave out, finest first. Each entry is one extra
+# copy of the training rows with those columns blanked.
+LOCATION_DROPOUT: list[list[str]] = [
+    ["postal_prefix"],
+    ["postal_prefix", "quarter"],
+    ["postal_prefix", "quarter", "district"],
+]
+
+
 def build_pipeline() -> Pipeline:
+    # Unknown and missing both encode as NaN, so XGBoost sends them down the same
+    # learned "missing" branch -- trained by the location-dropout rows. An unseen
+    # postal code then prices like no postal code instead of an arbitrary one.
     encoder = OrdinalEncoder(
         handle_unknown="use_encoded_value",
-        unknown_value=-1,
-        encoded_missing_value=-2,
+        unknown_value=np.nan,
+        encoded_missing_value=np.nan,
     )
     pre = ColumnTransformer(
         [("cat", encoder, CATEGORICAL_FEATURES)],
@@ -76,6 +95,23 @@ def build_pipeline() -> Pipeline:
     )
     pre.set_output(transform="pandas")
     return Pipeline([("pre", pre), ("model", XGBRegressor(**XGB_PARAMS))])
+
+
+def _with_location_dropout(x: pd.DataFrame, y: np.ndarray) -> tuple[pd.DataFrame, np.ndarray]:
+    """The rows as scraped plus one copy per ``LOCATION_DROPOUT`` level."""
+    copies = [x] + [_blank(x, cols) for cols in LOCATION_DROPOUT]
+    return pd.concat(copies, ignore_index=True), np.tile(y, len(copies))
+
+
+def _blank(x: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
+    out = x.copy()
+    for col in cols:
+        out[col] = out[col].where(pd.Series(False, index=out.index))  # keeps the dtype
+    return out
+
+
+def _fit(x: pd.DataFrame, y: np.ndarray) -> Pipeline:
+    return build_pipeline().fit(*_with_location_dropout(x, y))
 
 
 def _metrics(y_true_log: np.ndarray, y_pred_log: np.ndarray) -> dict[str, float]:
@@ -111,16 +147,24 @@ def train_model(
     y = feats[TARGET].to_numpy()
     x_tr, x_te, y_tr, y_te = train_test_split(x, y, test_size=test_size, random_state=seed)
 
+    # Dropout copies are made inside each fold, never before splitting: a blanked
+    # copy of a validation row in the training folds would leak its price.
     folds = min(cv_folds, max(2, len(x_tr) // 20))
     cv = KFold(n_splits=folds, shuffle=True, random_state=seed)
-    oof_pred = cross_val_predict(build_pipeline(), x_tr, y_tr, cv=cv)
+    oof_pred = np.empty(len(y_tr))
+    for fit_idx, val_idx in cv.split(x_tr):
+        fold_pipe = _fit(x_tr.iloc[fit_idx], y_tr[fit_idx])
+        oof_pred[val_idx] = fold_pipe.predict(x_tr.iloc[val_idx])
     cv_metrics = _metrics(y_tr, oof_pred)
 
-    holdout_pipe = build_pipeline().fit(x_tr, y_tr)
+    holdout_pipe = _fit(x_tr, y_tr)
     holdout_metrics = _metrics(y_te, holdout_pipe.predict(x_te))
+    # What the demo page sends by default: city, size, rooms -- no location detail.
+    city_only = _blank(x_te, LOCATION_DROPOUT[-1])
+    city_only_metrics = _metrics(y_te, holdout_pipe.predict(city_only))
 
     # the deployed artifact is refit on every row
-    final_pipe = build_pipeline().fit(x, y)
+    final_pipe = _fit(x, y)
 
     metadata = {
         "trained_at": datetime.now(UTC).isoformat(),
@@ -133,6 +177,7 @@ def train_model(
         "test_size": test_size,
         "seed": seed,
         "xgb_params": XGB_PARAMS,
+        "location_dropout": LOCATION_DROPOUT,
         "cities": sorted(map(str, pd.Series(df.get("city")).dropna().unique())),
         "versions": {
             "python": platform.python_version(),
@@ -140,7 +185,8 @@ def train_model(
             "scikit_learn": sklearn.__version__,
         },
     }
-    return TrainResult(final_pipe, {"cv": cv_metrics, "holdout": holdout_metrics}, metadata)
+    metrics = {"cv": cv_metrics, "holdout": holdout_metrics, "holdout_city_only": city_only_metrics}
+    return TrainResult(final_pipe, metrics, metadata)
 
 
 class TrainingBlocked(RuntimeError):
@@ -202,10 +248,10 @@ def _load_frame(from_sample: bool) -> pd.DataFrame:
 
 
 def _print_report(result: TrainResult, saved_to: str) -> None:
-    for split in ("cv", "holdout"):
+    for split in ("cv", "holdout", "holdout_city_only"):
         m = result.metrics[split]
         print(
-            f"{split:>8}  n={m['n']:<5} "
+            f"{split:>17}  n={m['n']:<5} "
             f"MAE EUR {m['mae_eur']:>10,.0f}  "
             f"median APE {m['median_ape_pct']:>5.1f}%  "
             f"MAPE {m['mape_pct']:>5.1f}%  "

@@ -16,7 +16,7 @@ from typing import Annotated
 
 import numpy as np
 from fastapi import Depends, FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -81,6 +81,30 @@ def root() -> str:
 )
 def model_card() -> str:
     return _MODEL_CARD_HTML
+
+
+# Explicit media types rather than guessing from the extension: Caddy sends
+# X-Content-Type-Options: nosniff, so a wrong type means the browser drops it.
+_STATIC_ASSET_CACHE = {"Cache-Control": "public, max-age=86400"}
+
+
+@app.api_route(
+    "/favicon.svg", methods=["GET", "HEAD"], response_class=FileResponse, include_in_schema=False
+)
+def favicon() -> FileResponse:
+    return FileResponse(
+        _STATIC / "favicon.svg", media_type="image/svg+xml", headers=_STATIC_ASSET_CACHE
+    )
+
+
+# Link-preview image for the og:image tag on the demo page (LinkedIn etc.).
+@app.api_route(
+    "/og-image.png", methods=["GET", "HEAD"], response_class=FileResponse, include_in_schema=False
+)
+def og_image() -> FileResponse:
+    return FileResponse(
+        _STATIC / "og-image.png", media_type="image/png", headers=_STATIC_ASSET_CACHE
+    )
 
 
 # HEAD too: uptime monitors (e.g. UptimeRobot) check with HEAD by default, and a

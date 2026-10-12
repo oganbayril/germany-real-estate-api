@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import struct
 from collections.abc import Iterator
+from html.parser import HTMLParser
 from pathlib import Path
+from urllib.parse import urlsplit
+from xml.etree import ElementTree
 
 import numpy as np
 import pandas as pd
@@ -122,6 +126,65 @@ def test_root_accepts_head(client: TestClient) -> None:
 
 def test_root_links_plain_language_model_card(client: TestClient) -> None:
     assert 'href="/model-card"' in client.get("/").text
+
+
+class _HeadTags(HTMLParser):
+    """Collects <meta> content by property/name and <link rel> hrefs."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.meta: dict[str, str] = {}
+        self.links: dict[str, str] = {}
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        a = {k: v or "" for k, v in attrs}
+        if tag == "meta" and "content" in a:
+            self.meta[a.get("property") or a.get("name", "")] = a["content"]
+        elif tag == "link" and "rel" in a:
+            self.links[a["rel"]] = a["href"]
+
+
+def _head_tags(html: str) -> _HeadTags:
+    parser = _HeadTags()
+    parser.feed(html)
+    return parser
+
+
+def test_root_has_link_preview_tags(client: TestClient) -> None:
+    meta = _head_tags(client.get("/").text).meta
+    for key in ("og:title", "og:description", "og:image:alt", "description"):
+        assert meta.get(key), key
+    assert meta["og:type"] == "website"
+    assert meta["twitter:card"] == "summary_large_image"
+    # Crawlers don't resolve relative URLs: these must be absolute https.
+    for key in ("og:url", "og:image"):
+        url = urlsplit(meta[key])
+        assert url.scheme == "https" and url.netloc, f"{key} is not absolute: {meta[key]}"
+    assert (meta["og:image:width"], meta["og:image:height"]) == ("1200", "630")
+
+
+def test_og_image_is_served_at_the_advertised_size(client: TestClient) -> None:
+    meta = _head_tags(client.get("/").text).meta
+    resp = client.get(urlsplit(meta["og:image"]).path)
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "image/png"
+    png = resp.content
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    width, height = struct.unpack(">II", png[16:24])  # IHDR follows the signature
+    assert (width, height) == (int(meta["og:image:width"]), int(meta["og:image:height"]))
+    assert len(png) < 1_000_000  # LinkedIn's limit is 5 MB; keep previews quick
+    assert client.head("/og-image.png").status_code == 200
+
+
+def test_favicon_is_linked_and_served(client: TestClient) -> None:
+    href = _head_tags(client.get("/").text).links["icon"]
+    assert href == _head_tags(client.get("/model-card").text).links["icon"]
+    resp = client.get(href)
+    assert resp.status_code == 200
+    # Must be exact: Caddy sends nosniff, so a wrong type means no icon.
+    assert resp.headers["content-type"] == "image/svg+xml"
+    assert ElementTree.fromstring(resp.content).tag == "{http://www.w3.org/2000/svg}svg"
+    assert client.head(href).status_code == 200
 
 
 def test_model_card_page(client: TestClient) -> None:

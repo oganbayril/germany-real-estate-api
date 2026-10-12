@@ -6,8 +6,12 @@ whenever picking XGBoost again deserves re-justifying against plainer
 baselines: a linear regression floor, a random forest, and sklearn's own
 gradient-boosting implementation (no extra dependency, comparable to
 LightGBM). All four candidates share one preprocessing shape -- ordinal-encode
-the categoricals, median-impute the numerics -- so the only thing that varies
-is the estimator.
+the categoricals, median-impute the numerics -- and the same location-dropout
+training copies as production, so the only thing that varies is the estimator.
+A fifth row is the exact production pipeline (``train.build_pipeline``).
+
+Every model is graded twice on the same hold-out: as scraped, and as city-only
+requests (location detail removed) -- what the demo page sends by default.
 """
 
 from __future__ import annotations
@@ -34,7 +38,14 @@ from realestate.data.features import (
     TARGET,
     build_feature_frame,
 )
-from realestate.model.train import XGB_PARAMS, _metrics
+from realestate.model.train import (
+    LOCATION_DROPOUT,
+    XGB_PARAMS,
+    _blank,
+    _fit,
+    _metrics,
+    _with_location_dropout,
+)
 
 log = logging.getLogger(__name__)
 
@@ -63,29 +74,47 @@ def _pipeline_for(estimator: Any) -> Pipeline:
     return Pipeline([("pre", pre), ("model", estimator)])
 
 
+PRODUCTION = "xgboost (production)"
+
+
 def compare_models(
     df: pd.DataFrame, *, test_size: float = 0.2, seed: int = 42
-) -> dict[str, dict[str, float]]:
-    """Fit every candidate on the same train split, score on the same holdout."""
+) -> dict[str, dict[str, dict[str, float]]]:
+    """Fit every candidate on the same train split, score on the same holdout,
+    as scraped (``holdout``) and as city-only requests (``holdout_city_only``)."""
     feats = build_feature_frame(df).dropna(subset=[TARGET])
     x = feats[FEATURE_COLUMNS]
     y = feats[TARGET].to_numpy()
     x_tr, x_te, y_tr, y_te = train_test_split(x, y, test_size=test_size, random_state=seed)
+    x_te_city_only = _blank(x_te, LOCATION_DROPOUT[-1])
 
-    results = {}
-    for name, estimator in CANDIDATES.items():
-        pipe = _pipeline_for(estimator).fit(x_tr, y_tr)
-        results[name] = _metrics(y_te, pipe.predict(x_te))
-    return results
+    pipes = {
+        name: _pipeline_for(est).fit(*_with_location_dropout(x_tr, y_tr))
+        for name, est in CANDIDATES.items()
+    }
+    pipes[PRODUCTION] = _fit(x_tr, y_tr)
+    return {
+        name: {
+            "holdout": _metrics(y_te, pipe.predict(x_te)),
+            "holdout_city_only": _metrics(y_te, pipe.predict(x_te_city_only)),
+        }
+        for name, pipe in pipes.items()
+    }
 
 
-def _print_report(results: dict[str, dict[str, float]]) -> None:
-    print(f"{'model':<22} {'n':>5} {'MAE EUR':>12} {'median APE':>11} {'MAPE':>7} {'R2(EUR)':>8}")
-    for name, m in results.items():
+def _print_report(results: dict[str, dict[str, dict[str, float]]]) -> None:
+    for split in ("holdout", "holdout_city_only"):
+        print()
+        print(split)
         print(
-            f"{name:<22} {m['n']:>5} {m['mae_eur']:>12,.0f} "
-            f"{m['median_ape_pct']:>10.1f}% {m['mape_pct']:>6.1f}% {m['r2_eur']:>8.3f}"
+            f"{'model':<22} {'n':>5} {'MAE EUR':>12} {'median APE':>11} {'MAPE':>7} {'R2(EUR)':>8}"
         )
+        for name, by_split in results.items():
+            m = by_split[split]
+            print(
+                f"{name:<22} {m['n']:>5} {m['mae_eur']:>12,.0f} "
+                f"{m['median_ape_pct']:>10.1f}% {m['mape_pct']:>6.1f}% {m['r2_eur']:>8.3f}"
+            )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -108,7 +137,8 @@ def main(argv: list[str] | None = None) -> int:
 
     args = build_parser().parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-    df = _load_frame(args.from_sample)
+    # Read-only diagnostic: nothing is deployed, so a blocked last scrape doesn't matter.
+    df = _load_frame(args.from_sample, allow_blocked_scrape=True)
     log.info("comparing on %d cleaned rows", len(df))
     results = compare_models(df, test_size=args.test_size, seed=args.seed)
     _print_report(results)

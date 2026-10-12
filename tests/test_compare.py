@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from realestate.model.compare import CANDIDATES, compare_models
+from realestate.model.compare import CANDIDATES, PRODUCTION, compare_models
 
 
 @pytest.fixture
@@ -41,8 +41,10 @@ def synthetic_listings() -> pd.DataFrame:
 def test_compare_models_scores_every_candidate(synthetic_listings: pd.DataFrame) -> None:
     results = compare_models(synthetic_listings, seed=0)
 
-    assert set(results) == set(CANDIDATES)
-    for metrics in results.values():
+    assert set(results) == set(CANDIDATES) | {PRODUCTION}
+    for by_split in results.values():
+        assert set(by_split) == {"holdout", "holdout_city_only"}
+        metrics = by_split["holdout"]
         assert metrics["n"] > 0
         assert (
             metrics["mape_pct"] < 40
@@ -55,4 +57,5 @@ def test_xgboost_beats_the_linear_baseline(synthetic_listings: pd.DataFrame) -> 
     # city/area interaction), so a tree model should read it better than a plain
     # linear fit on ordinal-encoded categoricals.
     results = compare_models(synthetic_listings, seed=0)
-    assert results["xgboost"]["mae_eur"] < results["linear_regression"]["mae_eur"]
+    xgb, linear = results["xgboost"]["holdout"], results["linear_regression"]["holdout"]
+    assert xgb["mae_eur"] < linear["mae_eur"]

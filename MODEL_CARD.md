@@ -112,6 +112,28 @@ production. The database is still small for this kind of comparison, so this
 isn't a closed question — re-run `realestate-compare-models` again as more
 data accumulates, rather than trusting either single snapshot.
 
+### Re-run with location dropout (2026-10-12, 1,197 rows)
+
+After location dropout was added (see above), the comparison was re-run with
+every candidate trained the same way and graded twice, on listings as scraped
+and as city-only requests. A 240-row hold-out moves by 1-2 points between
+splits, so these are means over three splits (seeds 42, 1, 7):
+
+| model | median APE (located) | median APE (city only) | MAE | R² (euro) |
+|---|---|---|---|---|
+| linear regression | 24.5 % | 23.9 % | €175,700 | -0.33 |
+| random forest | 20.2 % | 20.4 % | €138,400 | 0.719 |
+| hist gradient boosting | 16.9 % | 20.1 % | €122,500 | 0.747 |
+| XGBoost (shared preprocessing) | 17.6 % | 20.2 % | €119,400 | 0.778 |
+| **XGBoost (production pipeline)** | **16.7 %** | **19.8 %** | **€115,700** | **0.782** |
+
+The production pipeline is best or tied-best on every column, but its lead
+over HistGradientBoosting (0.2-0.3 points of median APE) is smaller than the
+split-to-split noise, so this is still "both boosted-tree models are about
+equally good", not a clear win. Linear regression and random forest barely
+change between the two grades because they barely use location at all.
+Re-run with `realestate-compare-models`.
+
 ## Limitations & intended use
 
 - **Asking ≠ sold.** It models what sellers list, which runs above achieved

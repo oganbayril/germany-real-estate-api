@@ -44,6 +44,10 @@ class Settings(BaseSettings):
 
     # --- Model / training ---
     min_train_rows: int = 200
+    # Refuse to deploy a retrain whose hold-out median % error is more than this
+    # many percentage points worse than the live model's. Some slack is needed:
+    # the hold-out split changes as data grows, so the number drifts run to run.
+    max_error_regression_pts: float = 3.0
 
     # --- Filesystem ---
     data_dir: Path = PROJECT_ROOT / "data"

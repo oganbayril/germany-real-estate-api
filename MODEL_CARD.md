@@ -111,6 +111,10 @@ data accumulates, rather than trusting either single snapshot.
 ## Retraining
 
 `realestate-train` runs weekly on the VPS. It refuses to retrain if the latest
-scrape failed or the dataset is below `RE_MIN_TRAIN_ROWS`, and on success
+scrape failed or the dataset is below `RE_MIN_TRAIN_ROWS`. It also won't replace
+the live model with one whose hold-out median error is more than
+`RE_MAX_ERROR_REGRESSION_PTS` (default 3) percentage points worse; the margin
+absorbs the week-to-week wobble from the hold-out split changing as data grows,
+so it only catches a real regression (e.g. a bad scrape). On success it
 restarts the API so the new artifact (`models/<timestamp>/`) is picked up. Each
 artifact ships its own `metrics.json` and `metadata.json`.

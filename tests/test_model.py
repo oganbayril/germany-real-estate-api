@@ -10,7 +10,7 @@ import pytest
 
 from realestate.model import registry
 from realestate.model.predict import PricePredictor
-from realestate.model.train import build_pipeline, train_model
+from realestate.model.train import TrainingBlocked, build_pipeline, check_not_worse, train_model
 
 
 @pytest.fixture
@@ -101,6 +101,40 @@ def test_registry_latest_pointer(synthetic_listings: pd.DataFrame) -> None:
 def test_load_without_any_model_raises() -> None:
     with pytest.raises(FileNotFoundError):
         registry.load()
+
+
+# -- deploy guard -------------------------------------------------
+def _live_model(median_ape: float, **metadata: str) -> None:
+    registry.save(
+        build_pipeline(),
+        metrics={"holdout": {"median_ape_pct": median_ape}},
+        metadata=metadata,
+    )
+
+
+def _new(median_ape: float) -> dict:
+    return {"holdout": {"median_ape_pct": median_ape}}
+
+
+def test_guard_allows_first_model() -> None:
+    check_not_worse(_new(40.0), max_regression_pts=3.0)
+
+
+def test_guard_allows_change_within_slack() -> None:
+    _live_model(15.5)
+    check_not_worse(_new(18.4), max_regression_pts=3.0)
+
+
+def test_guard_blocks_clearly_worse_model() -> None:
+    _live_model(15.5)
+    with pytest.raises(TrainingBlocked, match="keeping the live model"):
+        check_not_worse(_new(18.6), max_regression_pts=3.0)
+
+
+def test_guard_ignores_sample_bootstrap_model() -> None:
+    # The 180-row sample model isn't a fair yardstick for one on real data.
+    _live_model(10.0, source="sample")
+    check_not_worse(_new(20.0), max_regression_pts=3.0)
 
 
 # -- prediction ---------------------------------------------------

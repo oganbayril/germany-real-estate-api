@@ -147,6 +147,29 @@ class TrainingBlocked(RuntimeError):
     """A safety guard refused to (re)train."""
 
 
+def check_not_worse(new_metrics: dict[str, Any], *, max_regression_pts: float) -> None:
+    """Refuse to replace the live model with one that grades clearly worse.
+
+    Compares hold-out median % error against the current ``latest`` artifact.
+    Skipped when there is no current model, or when it was the sample bootstrap
+    (180 Berlin-only rows -- not a fair yardstick for a model on real data).
+    """
+    current = registry.latest_version()
+    if current is None:
+        return
+    meta = registry.read_metadata(current)
+    if meta.get("source") == "sample":
+        return
+    old = registry.read_metrics(current).get("holdout", {}).get("median_ape_pct")
+    new = new_metrics["holdout"]["median_ape_pct"]
+    if old is not None and new > old + max_regression_pts:
+        raise TrainingBlocked(
+            f"new model's hold-out median error {new:.1f}% is more than "
+            f"{max_regression_pts:g} pts worse than live model {current} ({old:.1f}%); "
+            "keeping the live model (rerun with --force to deploy anyway)"
+        )
+
+
 # --------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------
@@ -206,6 +229,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--email", action="store_true", help="Email a one-line summary (VPS timer use)."
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Deploy even if the new model grades worse than the live one.",
+    )
     return parser
 
 
@@ -228,6 +256,9 @@ def main(argv: list[str] | None = None) -> int:
         df = _load_frame(args.from_sample)
         log.info("training on %d cleaned rows", len(df))
         result = train_model(df, test_size=args.test_size, seed=args.seed, min_rows=min_rows)
+        result.metadata["source"] = "sample" if args.from_sample else "database"
+        if not args.no_save and not args.force:
+            check_not_worse(result.metrics, max_regression_pts=settings.max_error_regression_pts)
     except (ValueError, TrainingBlocked) as exc:
         print(f"training aborted: {exc}", file=sys.stderr)
         _notify("retrain skipped", str(exc))

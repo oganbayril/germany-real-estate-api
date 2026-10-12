@@ -104,6 +104,15 @@ def load(version: str | None = None) -> Artifact:
     )
 
 
+def read_metrics(version: str) -> dict[str, Any]:
+    """A version's metrics without unpickling its model."""
+    return _read_json(_models_root() / version / _METRICS_FILE)
+
+
+def read_metadata(version: str) -> dict[str, Any]:
+    return _read_json(_models_root() / version / _METADATA_FILE)
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}

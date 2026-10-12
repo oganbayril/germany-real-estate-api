@@ -132,7 +132,13 @@ systemctl start realestate-train.service    # once the DB has >= RE_MIN_TRAIN_RO
 - **Retrain** — VPS, `Sat 04:00`. `realestate-train` refuses if the DB has
   `< RE_MIN_TRAIN_ROWS` usable rows or the latest scrape run didn't succeed
   (`blocked` status). A block that hits *after* real listings already landed is
-  recorded as `partial`, which still counts as retrain-eligible. On a successful
+  recorded as `partial`, which still counts as retrain-eligible. It also refuses
+  to deploy a model whose hold-out median error is more than
+  `RE_MAX_ERROR_REGRESSION_PTS` (default 3) points worse than the live one's:
+  the live model stays and the email says why. If the regression is expected
+  (new city, feature change), deploy it anyway with
+  `sudo -u realestate /opt/realestate/.venv/bin/realestate-train --force` and
+  `systemctl restart realestate-api`. On a successful
   retrain it restarts `realestate-api` (≈2 s blip) so the new artifact is picked up.
 - **Backup** — VPS, nightly `02:30`, `pg_dump -Fc`, keeps the 7 newest.
 

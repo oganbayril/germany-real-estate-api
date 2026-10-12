@@ -122,3 +122,37 @@ def test_allowed_hosts_rejects_cross_host_redirect(httpx_mock: HTTPXMock) -> Non
         pytest.raises(ScrapeError, match="off-allowlist"),
     ):
         client.get("https://site.test/x")
+
+
+def test_request_log_records_block_details(httpx_mock: HTTPXMock) -> None:
+    httpx_mock.add_response(url="https://site.test/robots.txt", status_code=404)
+    httpx_mock.add_response(url="https://site.test/ok", text="fine")
+    httpx_mock.add_response(
+        url="https://site.test/x?page=2",
+        status_code=403,
+        html="<html>DataDome captcha</html>",
+        headers={
+            "server": "nginx",
+            "x-datadome": "protected",
+            "set-cookie": "datadome=abc; Path=/",
+        },
+        is_reusable=True,
+    )
+    with _client(max_retries=2) as client:
+        client.get("https://site.test/ok")
+        with pytest.raises(BlockedError):
+            client.get("https://site.test/x?page=2")
+
+    log = client.request_log
+    assert [e["kind"] for e in log] == ["robots", "page", "page", "page"]
+    assert [e["status"] for e in log] == [404, 200, 403, 403]
+    assert [e["n"] for e in log] == [1, 2, 3, 4]
+    block = log[2]
+    assert block["blocked"] is True
+    assert block["path"] == "/x?page=2"
+    assert block["marker"] == "datadome"
+    assert block["headers"] == {"server": "nginx"}
+    assert block["datadome_headers"] == ["x-datadome"]
+    assert block["set_cookie_names"] == ["datadome"]
+    assert "abc" not in str(block)  # cookie values are not kept
+    assert "blocked" not in log[1]

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import Any
 
 from realestate.config import Settings, get_settings
 from realestate.db.models import ScrapeRun
@@ -30,6 +31,7 @@ class ScrapeStats:
     listings_updated: int = 0
     price_changes: int = 0
     errors: list[str] = field(default_factory=list)
+    first_block: dict[str, Any] | None = None
 
     def as_counts(self) -> dict[str, int]:
         return {
@@ -94,6 +96,8 @@ def run_scrape(
             error = error or "fetched pages but parsed 0 listings (likely a soft block)"
         elif status == "success" and stats.errors:
             status = "partial"
+        diagnostics = _diagnostics(client.request_log, settings, cap)
+        stats.first_block = diagnostics["first_block"]
         with session_scope() as session:
             run = session.get(ScrapeRun, run_id)
             if run is not None:
@@ -102,10 +106,39 @@ def run_scrape(
                     run,
                     status=status,
                     error=error or ("; ".join(stats.errors[:5]) or None),
+                    diagnostics=diagnostics,
                     **stats.as_counts(),
                 )
 
     return stats
+
+
+def _diagnostics(request_log: list[dict[str, Any]], settings: Settings, cap: int) -> dict[str, Any]:
+    """Summarise where in a run the first block hit, alongside the full log.
+
+    The pacing settings are stored with it because they change between runs;
+    without them, old runs couldn't be compared with new ones.
+    """
+    first = next((e for e in request_log if e.get("blocked")), None)
+    first_block = None
+    if first is not None:
+        before = request_log[: first["n"] - 1]
+        first_block = {
+            "request_n": first["n"],
+            "minutes_in": round(first["t_s"] / 60, 1),
+            "ok_requests_before": sum(1 for e in before if e.get("status") == 200),
+            "kind": first["kind"],
+            "path": first["path"],
+            "status": first.get("status"),
+            "marker": first.get("marker"),
+        }
+    return {
+        "delay_s": [settings.scrape_delay_min_s, settings.scrape_delay_max_s],
+        "max_search_urls_per_city": cap,
+        "requests_total": len(request_log),
+        "first_block": first_block,
+        "requests": request_log,
+    }
 
 
 def _run(

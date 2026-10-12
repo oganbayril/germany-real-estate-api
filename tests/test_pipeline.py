@@ -170,4 +170,41 @@ def test_block_after_partial_progress_marks_run_partial(
     assert session.query(Listing).count() == 3
     assert run.pages_fetched == 1
     assert run.exposes_seen == 3
+
+    diag = run.diagnostics
+    assert diag["delay_s"] == [0, 0]
+    assert [e["status"] for e in diag["requests"]][:3] == [200, 200, 403]
+    assert diag["first_block"] == {
+        "request_n": 3,
+        "minutes_in": 0.0,
+        "ok_requests_before": 2,  # robots.txt + the first search page
+        "kind": "page",
+        "path": "/search/blocked",
+        "status": 403,
+        "marker": None,
+    }
     session.close()
+
+
+def test_block_report_lists_runs(
+    wired_db: sessionmaker[Session],
+    settings: Settings,
+    httpx_mock: HTTPXMock,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from realestate.scraper import cli
+
+    monkeypatch.setattr("realestate.scraper.client.time.sleep", lambda *_: None)
+    httpx_mock.add_response(url="https://example.test/robots.txt", text="User-agent: *\nAllow: /")
+    httpx_mock.add_response(url="https://example.test/search/ok", text="<html>ok</html>")
+    httpx_mock.add_response(
+        url="https://example.test/search/blocked", status_code=403, is_reusable=True
+    )
+    pipeline.run_scrape(cities=["berlin"], source=BlockedAfterProgressSource(), settings=settings)
+
+    monkeypatch.setattr("realestate.db.session.session_scope", pipeline.session_scope)
+    assert cli.main(["block-report"]) == 0
+    out = capsys.readouterr().out
+    assert "partial" in out
+    assert "403" in out

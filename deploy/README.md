@@ -127,7 +127,13 @@ systemctl start realestate-train.service    # once the DB has >= RE_MIN_TRAIN_RO
   (2026-10-03, up to 12 pages on 2 of 3 runs, still one full block) →
   120-240s (2026-10-12), each step a single-variable test to see whether a
   slower pace buys a longer session. Raise the caps only once runs are
-  coming back `success` rather than `partial`. The discovery cache lives at
+  coming back `success` rather than `partial`. Since 2026-10-12 every run
+  stores a per-request log in `scrape_runs.diagnostics` (status, seconds into
+  the run, and for blocked responses the marker, headers and cookie names);
+  `sudo -u realestate /opt/realestate/.venv/bin/realestate-scrape block-report`
+  prints one line per run (gap since the previous run, delay, OK requests
+  before the first block, minutes in) to compare what blocks correlate with.
+  The scrape email also names the first block. The discovery cache lives at
   `data/immowelt_search_urls.json`; delete it to force a rebuild.
 - **Retrain** — VPS, `Sat 04:00`. `realestate-train` refuses if the DB has
   `< RE_MIN_TRAIN_ROWS` usable rows or the latest scrape run didn't succeed

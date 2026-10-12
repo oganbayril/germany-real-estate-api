@@ -103,10 +103,17 @@ def start_scrape_run(session: Session, cities: list[str], *, dry_run: bool = Fal
 
 
 def finish_scrape_run(
-    session: Session, run: ScrapeRun, *, status: str, error: str | None = None, **counts: int
+    session: Session,
+    run: ScrapeRun,
+    *,
+    status: str,
+    error: str | None = None,
+    diagnostics: dict | None = None,
+    **counts: int,
 ) -> ScrapeRun:
     run.status = status
     run.error = error
+    run.diagnostics = diagnostics
     run.finished_at = utcnow()
     for key, value in counts.items():
         setattr(run, key, value)

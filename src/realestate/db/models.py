@@ -138,3 +138,6 @@ class ScrapeRun(Base):
     listings_updated: Mapped[int] = mapped_column(Integer, default=0)
     price_changes: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str | None] = mapped_column(Text)
+    # Per-request log + first-block summary + the pacing settings used, so block
+    # patterns can be compared across runs (see `realestate-scrape block-report`).
+    diagnostics: Mapped[dict | None] = mapped_column(JSON)

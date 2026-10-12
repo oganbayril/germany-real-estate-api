@@ -7,6 +7,7 @@ model has been trained yet the app still starts (and ``/health`` reports it), bu
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from collections import defaultdict
 from collections.abc import AsyncIterator
@@ -63,7 +64,15 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 _STATIC = Path(__file__).parent / "static"
-_INDEX_HTML = (_STATIC / "index.html").read_text(encoding="utf-8")
+# LinkedIn and other crawlers cache og:image by URL and don't re-fetch it even
+# when the page itself is re-scraped, so the URL carries a hash of the file:
+# a re-rendered image gets a new URL and previews pick it up.
+_OG_IMAGE_VERSION = hashlib.sha256((_STATIC / "og-image.png").read_bytes()).hexdigest()[:10]
+_INDEX_HTML = (
+    (_STATIC / "index.html")
+    .read_text(encoding="utf-8")
+    .replace("/og-image.png", f"/og-image.png?v={_OG_IMAGE_VERSION}")
+)
 _MODEL_CARD_HTML = (_STATIC / "model_card.html").read_text(encoding="utf-8")
 
 

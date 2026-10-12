@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import struct
 from collections.abc import Iterator
 from html.parser import HTMLParser
@@ -166,9 +167,12 @@ def test_root_has_link_preview_tags(client: TestClient) -> None:
 
 def test_og_image_is_served_at_the_advertised_size(client: TestClient) -> None:
     meta = _head_tags(client.get("/").text).meta
-    resp = client.get(urlsplit(meta["og:image"]).path)
+    url = urlsplit(meta["og:image"])
+    resp = client.get(f"{url.path}?{url.query}")
     assert resp.status_code == 200
     assert resp.headers["content-type"] == "image/png"
+    # Crawlers cache og:image by URL: the URL must change whenever the image does.
+    assert url.query == "v=" + hashlib.sha256(resp.content).hexdigest()[:10]
     png = resp.content
     assert png[:8] == b"\x89PNG\r\n\x1a\n"
     width, height = struct.unpack(">II", png[16:24])  # IHDR follows the signature

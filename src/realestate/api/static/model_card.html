@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How the Price Model Works</title>
+<meta name="description" content="What the Germany real-estate price model was trained on, how accurate it is, and what it can't see — in plain language.">
+<script>
+  // Same theme handling as the demo page: apply a saved choice before first paint.
+  (function () {
+    try {
+      var t = localStorage.getItem('theme');
+      if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+    } catch (e) { /* storage blocked -> just use system */ }
+  })();
+</script>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --text: #1a1d23;
+    --muted: #667085;
+    --border: #e3e6eb;
+    --accent: #2f6fed;
+    --accent-text: #ffffff;
+    --good: #1f8a4c;
+    --bad: #b5472b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14161a;
+      --card: #1d2026;
+      --text: #edeef1;
+      --muted: #9aa2b1;
+      --border: #2c3038;
+      --accent: #5b8def;
+      --accent-text: #0c1220;
+      --good: #5cc98a;
+      --bad: #f08a6c;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #14161a;
+    --card: #1d2026;
+    --text: #edeef1;
+    --muted: #9aa2b1;
+    --border: #2c3038;
+    --accent: #5b8def;
+    --accent-text: #0c1220;
+    --good: #5cc98a;
+    --bad: #f08a6c;
+  }
+  :root[data-theme="light"] { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+    padding: 40px 16px 80px;
+    line-height: 1.55;
+  }
+  main { width: 100%; max-width: 640px; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  h2 { font-size: 1.05rem; margin: 0 0 10px; }
+  p { margin: 0 0 10px; }
+  p:last-child { margin-bottom: 0; }
+  .subtitle { color: var(--muted); margin: 0 0 28px; }
+  .back { display: inline-block; margin-bottom: 18px; color: var(--accent); text-decoration: none; font-size: 0.9rem; }
+  .back:hover { text-decoration: underline; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px 24px;
+    margin-bottom: 18px;
+  }
+  .facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .fact .num { font-size: 1.45rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .fact .lbl { color: var(--muted); font-size: 0.82rem; line-height: 1.35; }
+  .big { font-size: 1.15rem; }
+  .big strong { font-variant-numeric: tabular-nums; }
+  .muted { color: var(--muted); font-size: 0.9rem; }
+  ul { margin: 0; padding-left: 0; list-style: none; }
+  li { padding: 4px 0 4px 26px; position: relative; }
+  li::before { position: absolute; left: 2px; font-weight: 700; }
+  .yes li::before { content: "✓"; color: var(--good); }
+  .no li::before { content: "✗"; color: var(--bad); }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .cols h3 { font-size: 0.9rem; margin: 0 0 6px; }
+  a { color: var(--accent); }
+  .theme-toggle { display: flex; justify-content: flex-end; gap: 4px; margin-bottom: 8px; }
+  .theme-toggle button {
+    padding: 6px 12px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .theme-toggle button.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  #unavailable { display: none; }
+  #unavailable.show { display: block; }
+  footer { text-align: center; color: var(--muted); font-size: 0.8rem; line-height: 1.8; margin-top: 8px; }
+  footer a { color: inherit; }
+  @media (max-width: 520px) {
+    .facts, .cols { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div class="theme-toggle" role="group" aria-label="Theme">
+    <button type="button" data-theme-choice="system">System</button>
+    <button type="button" data-theme-choice="light">Light</button>
+    <button type="button" data-theme-choice="dark">Dark</button>
+  </div>
+
+  <a class="back" href="/">← Back to the price estimator</a>
+  <h1>How the price model works</h1>
+  <p class="subtitle">
+    What the model learned from, how accurate it is, and where it falls short —
+    no statistics background needed.
+  </p>
+
+  <div class="card" id="unavailable">
+    <p>No model is loaded right now, so live numbers can't be shown. Please check back later.</p>
+  </div>
+
+  <div class="card">
+    <h2>The current model at a glance</h2>
+    <div class="facts">
+      <div class="fact"><div class="num" id="nRows">—</div><div class="lbl">apartment listings it learned from</div></div>
+      <div class="fact"><div class="num" id="nCities">—</div><div class="lbl" id="citiesLbl">cities</div></div>
+      <div class="fact"><div class="num" id="trainedOn">—</div><div class="lbl">last retrained (it relearns every week as new listings arrive)</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>How accurate is it?</h2>
+    <p class="big">
+      About <strong>half of all estimates land within <span id="medPct">—</span></strong>
+      of the real asking price.
+    </p>
+    <p id="example"></p>
+    <p>
+      The other half miss by more, and a few miss by a lot — mostly very large,
+      expensive or unusual flats, where there are only a handful of similar
+      examples to learn from. Averaged over every estimate, the miss is about
+      <strong id="meanPct">—</strong>.
+    </p>
+    <p class="muted" id="testNote">
+      These numbers come from a fair test: some listings are held back during
+      training, and the model is graded on those, since it has never seen them.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>What it looks at — and what it can't see</h2>
+    <div class="cols">
+      <div>
+        <h3>Uses</h3>
+        <ul class="yes">
+          <li>City</li>
+          <li>Neighbourhood (district, quarter, postcode area)</li>
+          <li>Living area in m²</li>
+          <li>Number of rooms</li>
+          <li>Floor</li>
+          <li>Energy efficiency class</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Can't see</h3>
+        <ul class="no">
+          <li>Condition or renovation</li>
+          <li>Year built</li>
+          <li>Balcony, lift, garden, parking</li>
+          <li>View, light, noise</li>
+          <li>Photos and description</li>
+        </ul>
+      </div>
+    </div>
+    <p class="muted" style="margin-top:14px">
+      So two flats that look identical on paper get the same estimate, even if
+      one is freshly renovated and the other needs a new kitchen.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Where the data comes from</h2>
+    <p>
+      Apartments listed <strong>for sale</strong> on immowelt.de, collected
+      automatically from the public search results a couple of times a week.
+    </p>
+    <p>
+      The model predicts the <strong>asking price</strong> — what the seller
+      advertises — not what the flat actually sells for. Final sale prices are
+      often lower.
+    </p>
+    <p>
+      The listings are whatever happened to be online when they were collected,
+      not a careful sample of the whole market, and the smaller cities have far
+      fewer examples than Berlin.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>What it's for</h2>
+    <p>
+      This is a <strong>portfolio project</strong> that shows a complete machine
+      learning system working end to end: collecting data, storing it, training
+      a model, and serving it live on the web.
+    </p>
+    <p>
+      It is <strong>not</strong> a property valuation. Please don't use it to
+      decide what to buy, sell, offer or borrow.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>For developers</h2>
+    <p class="muted">
+      Gradient-boosted trees (XGBoost) predicting the log of the asking price.
+      Model version <code id="version">—</code>.
+      Raw metrics as JSON at <a href="/model">/model</a> ·
+      full technical write-up in
+      <a href="https://github.com/oganbayril/germany-real-estate-api/blob/main/MODEL_CARD.md">MODEL_CARD.md</a> ·
+      <a href="/docs">API docs</a>.
+    </p>
+  </div>
+
+  <footer>
+    <a href="/">Price estimator</a> ·
+    <a href="https://github.com/oganbayril/germany-real-estate-api">source on GitHub</a>
+  </footer>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const fmtEUR = (n) => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(n);
+const fmtInt = (n) => new Intl.NumberFormat('en-GB').format(n);
+
+const CITY_NAMES = { berlin: 'Berlin', hamburg: 'Hamburg', koeln: 'Köln', leipzig: 'Leipzig', muenchen: 'München' };
+
+const themeButtons = document.querySelectorAll('[data-theme-choice]');
+function applyThemeChoice(choice) {
+  if (choice === 'light' || choice === 'dark') document.documentElement.dataset.theme = choice;
+  else delete document.documentElement.dataset.theme;
+  themeButtons.forEach((btn) => btn.classList.toggle('active', btn.dataset.themeChoice === choice));
+}
+let storedTheme = 'system';
+try { storedTheme = localStorage.getItem('theme') || 'system'; } catch (e) { /* stays "system" */ }
+applyThemeChoice(storedTheme);
+themeButtons.forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const choice = btn.dataset.themeChoice;
+    applyThemeChoice(choice);
+    try {
+      if (choice === 'system') localStorage.removeItem('theme');
+      else localStorage.setItem('theme', choice);
+    } catch (e) { /* choice still applies this session */ }
+  });
+});
+
+// Every number on this page comes from the live model, so the page can't drift
+// out of date when the weekly retrain ships a new version.
+function render(m) {
+  const holdout = m.metrics?.holdout ?? {};
+  if (m.n_rows_total) $('nRows').textContent = fmtInt(m.n_rows_total);
+
+  const cities = (m.cities ?? []).map((c) => CITY_NAMES[c] ?? c);
+  if (cities.length) {
+    $('nCities').textContent = cities.length;
+    $('citiesLbl').textContent = 'cities: ' + cities.join(', ');
+  }
+
+  if (m.trained_at) {
+    $('trainedOn').textContent = new Date(m.trained_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  const med = holdout.median_ape_pct;
+  if (med != null) {
+    const pct = Math.round(med);
+    $('medPct').textContent = '±' + pct + '%';
+    const example = 400000;
+    $('example').textContent = 'For example, for a flat advertised at ' + fmtEUR(example) +
+      ', a typical estimate would be somewhere between ' + fmtEUR(example * (1 - pct / 100)) +
+      ' and ' + fmtEUR(example * (1 + pct / 100)) + '.';
+  }
+  if (holdout.mape_pct != null) $('meanPct').textContent = Math.round(holdout.mape_pct) + '%';
+  if (holdout.n) {
+    $('testNote').textContent = 'These numbers come from a fair test: ' + fmtInt(holdout.n) +
+      ' listings were held back during training, and the model was graded on those, since it had never seen them.';
+  }
+  if (m.version) $('version').textContent = m.version;
+}
+
+fetch('/model')
+  .then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+  .then(render)
+  .catch(() => $('unavailable').classList.add('show'));
+</script>
+</body>
+</html>

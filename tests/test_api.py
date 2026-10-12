@@ -120,6 +120,20 @@ def test_root_accepts_head(client: TestClient) -> None:
     assert resp.content == b""
 
 
+def test_root_links_plain_language_model_card(client: TestClient) -> None:
+    assert 'href="/model-card"' in client.get("/").text
+
+
+def test_model_card_page(client: TestClient) -> None:
+    resp = client.get("/model-card")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]
+    assert "How the price model works" in resp.text
+    # Numbers are filled in from the live model, not hard-coded.
+    assert "fetch('/model')" in resp.text
+    assert client.head("/model-card").status_code == 200
+
+
 def test_health_reports_model(client: TestClient) -> None:
     body = client.get("/health").json()
     assert body["status"] == "ok"

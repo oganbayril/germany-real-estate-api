@@ -62,7 +62,9 @@ app = FastAPI(title="Germany Real-Estate Price API", version=__version__, lifesp
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-_INDEX_HTML = (Path(__file__).parent / "static" / "index.html").read_text(encoding="utf-8")
+_STATIC = Path(__file__).parent / "static"
+_INDEX_HTML = (_STATIC / "index.html").read_text(encoding="utf-8")
+_MODEL_CARD_HTML = (_STATIC / "model_card.html").read_text(encoding="utf-8")
 
 
 # HEAD too, like /health: link checkers and monitors pointed at the homepage
@@ -70,6 +72,15 @@ _INDEX_HTML = (Path(__file__).parent / "static" / "index.html").read_text(encodi
 @app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse, include_in_schema=False)
 def root() -> str:
     return _INDEX_HTML
+
+
+# The plain-language counterpart to GET /model (which stays JSON for API
+# clients). The page fills in its numbers from /model in the browser.
+@app.api_route(
+    "/model-card", methods=["GET", "HEAD"], response_class=HTMLResponse, include_in_schema=False
+)
+def model_card() -> str:
+    return _MODEL_CARD_HTML
 
 
 # HEAD too: uptime monitors (e.g. UptimeRobot) check with HEAD by default, and a

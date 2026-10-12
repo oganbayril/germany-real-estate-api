@@ -23,27 +23,36 @@ bot wall). Fields therefore come from the results cards only.
 
 - **Scope:** Berlin, Hamburg, München, Köln, Leipzig.
 - **Target:** the listed **asking** price, not a transaction price.
-- **Current model** (`2026-10-03T04-43-15Z`): trained on **912 real scraped
-  listings** across all 5 cities. The very first deployed model (until enough
-  data existed) trained on the bundled `sample/listings_sample.csv` (180 rows,
-  Berlin only) — that bootstrap path still exists for a fresh deployment with an
-  empty database (`RE_MIN_TRAIN_ROWS`, default 200).
+- **Size:** grows with every scrape. The model retrains weekly on everything
+  collected so far; the live row count is on
+  [/model-card](https://germany-real-estate.duckdns.org/model-card) (plain
+  language) and [/model](https://germany-real-estate.duckdns.org/model) (JSON).
+- **Bootstrap:** a fresh deployment with an empty database (fewer than
+  `RE_MIN_TRAIN_ROWS`, default 200) trains on the bundled
+  `sample/listings_sample.csv` (180 rows, Berlin only) until enough real data
+  exists.
 
 ## Performance
 
-5-fold out-of-fold CV and a 20% hold-out, in euro terms (n = 912 total):
+Each training run reports two evaluations, in euro terms (predictions are
+exponentiated back from log price):
 
-| metric | CV (n=729) | hold-out (n=183) |
-|---|---|---|
-| median abs. % error | 15.8 % | 17.8 % |
-| MAPE | 21.7 % | 21.0 % |
-| MAE | €121,954 | €137,983 |
-| R² (log price) | 0.80 | 0.85 |
-| R² (euro price) | 0.72 | 0.77 |
+- **CV:** 5-fold out-of-fold predictions on the 80% train split.
+- **Hold-out:** a 20% split the model never sees while fitting.
 
-Read: roughly **half of predictions land within ~18 %** of the asking price. The
-gap between log-R² and euro-R² is the long right tail — a few large errors on
-expensive flats dominate the squared/absolute euro metrics.
+Metrics: median absolute % error, MAPE, MAE, RMSE, median absolute error, and
+R² on both log and euro scale. They are saved with every artifact
+(`models/<timestamp>/metrics.json`) and served live at
+[/model](https://germany-real-estate.duckdns.org/model), and the hold-out
+median % error is what `/predict` returns as `typical_error_pct`. They aren't
+copied here because the model retrains every week and this file would go stale.
+
+A recent snapshot, to show the scale: model `2026-10-10T04-03-47Z`, 1,197 rows
+(957 train / 240 hold-out), hold-out median APE 15.5 %, MAPE 21.2 %,
+R² (log) 0.84, R² (euro) 0.81. Read: roughly **half of predictions land within
+~15 %** of the asking price. The gap between log-R² and euro-R² is the long right
+tail: a few large errors on expensive flats dominate the squared and absolute
+euro metrics.
 
 Feature importance is led by `rooms`, `city`, and `living_area_sqm`, then the
 location columns (`postal_prefix`, `district`, `quarter`).
@@ -86,7 +95,8 @@ data accumulates, rather than trusting either single snapshot.
 
 - **Asking ≠ sold.** It models what sellers list, which runs above achieved
   prices, especially in a soft market.
-- **Small, non-random sample.** A few hundred rows across 5 cities, skewed toward
+- **Small, non-random sample.** About a thousand rows across 5 cities (Berlin
+  alone is roughly half), skewed toward
   whichever districts and filter combinations the scraper's sitemap-derived
   discovery has sampled so far. Not representative of the German market.
 - **Thin features.** No year built, condition, heating type, or amenities — those

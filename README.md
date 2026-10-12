@@ -10,7 +10,8 @@ VPS with plain systemd, native Postgres, Caddy/TLS.
 
 **Live:** <https://germany-real-estate.duckdns.org> — a no-code demo page (fill
 in a flat's details, get a price). Also `/docs`, `/predict`, `/model`, `/stats`.
-See [MODEL_CARD.md](MODEL_CARD.md) for what the model does and doesn't do.
+See [/model-card](https://germany-real-estate.duckdns.org/model-card) for a
+plain-language summary, or [MODEL_CARD.md](MODEL_CARD.md) for the technical one.
 
 The scraper collects listings gently (5 search URLs/city, 120-240s between
 requests, a 2-week URL-discovery cache) since Immowelt's DataDome bot-protection
@@ -137,9 +138,11 @@ is refit on every row.
 `model/predict.py`'s `PricePredictor` loads the latest and scores a listing
 through the same `build_feature_frame`.
 
-Current model (≈560 Berlin/Leipzig/Hamburg listings, card-only features):
-holdout median error ≈20%, R²(log) ≈0.82. Thin by design — more data from the
-scheduled scraper and light tuning are the obvious next gains.
+The model retrains weekly, so live numbers (row count, hold-out error) are on
+[/model-card](https://germany-real-estate.duckdns.org/model-card) rather than
+here. As of mid-October 2026: ~1,200 listings across 5 cities, half of
+predictions within ~15% of the asking price. Features are thin by design
+(card-only), so more data and richer features are the obvious next gains.
 
 ## API
 
@@ -156,7 +159,8 @@ auto-generated interactive schema, for anyone who wants to see the raw API.
 |-------|---------|
 | `GET /` | interactive demo page (fill a form, get a price) |
 | `POST /predict` | listing attributes → predicted price, €/m², model version, the model's typical % error |
-| `GET /model` | version, metrics, feature list, training row count — a model card over HTTP |
+| `GET /model-card` | plain-language model card page (filled in live from `/model`) |
+| `GET /model` | version, metrics, feature list, training row count, as JSON |
 | `GET /stats` | listing counts by city, price percentiles, last scrape — straight from the DB |
 | `GET /health` | liveness + whether a model is loaded |
 | `GET /docs` | interactive OpenAPI/Swagger UI |

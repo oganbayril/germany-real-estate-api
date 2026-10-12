@@ -11,10 +11,11 @@ First run only: ``uv run --with playwright playwright install chromium``.
 
 Fills the form with a realistic example (city-wide Berlin: naming a premium
 district would need a price to match, and the model's location effect is
-weak), clicks "Estimate price", waits for the model's answer, then re-lays
-the same page out as a 1200x630 card with large type (previews are often
-shown ~300 px wide) and screenshots it. Prints
-the prediction so it can be sanity-checked before the image is committed.
+weak), clicks "Estimate price" and waits for the model's answer. Then it lays
+the same page out wide -- title and result on the left, the filled form on the
+right -- keeping the page's own fonts, colours and spacing, grows the title
+and price as far as the frame allows, and screenshots at 2x (2400x1260).
+Prints the prediction so it can be sanity-checked before committing.
 Playwright is deliberately not a project dependency: it's only needed here.
 """
 
@@ -27,34 +28,52 @@ from playwright.sync_api import sync_playwright
 
 OUT = Path(__file__).resolve().parents[1] / "src/realestate/api/static/og-image.png"
 
-# Screenshot-only layout: title + result on the left, the filled form on the
-# right. Theme toggle and footer are hidden; nothing here touches the real page.
-CARD_CSS = """
+WIDTH, HEIGHT, SCALE = 1200, 630, 2
+
+# Screenshot-only layout; nothing here touches the real page. Only the frame
+# is new: every font, colour, border, radius and margin comes from the page's
+# own stylesheet. The 40px frame padding is the page's own body padding.
+WIDE_CSS = """
 html, body { width: 1200px; height: 630px; overflow: hidden; }
 body { padding: 0; display: block; }
 main {
-  max-width: none; width: 1200px; height: 630px; padding: 48px 56px;
-  display: grid; grid-template-columns: 1fr 430px; column-gap: 48px;
-  grid-template-rows: auto auto 1fr; align-items: start;
+  max-width: none; width: 1200px; height: 630px; padding: 40px;
+  display: grid; grid-template-columns: 1fr 470px; column-gap: 40px; align-items: center;
 }
 .theme-toggle, footer, #error { display: none !important; }
-h1 { grid-column: 1; grid-row: 1; font-size: 50px; line-height: 1.12; margin: 0 0 18px; }
-.subtitle { grid-column: 1; grid-row: 2; font-size: 25px; line-height: 1.4; margin: 0 0 26px; }
-#result { grid-column: 1; grid-row: 3; margin: 0; padding: 26px 30px; align-self: end; }
-.price { font-size: 76px; line-height: 1.05; }
-.price-sub { font-size: 30px; margin-top: 6px; }
-.note { font-size: 19px; margin-top: 14px; padding-top: 12px; }
-main > .card:not(#result) {
-  grid-column: 2; grid-row: 1 / 4; margin: 0; padding: 22px 24px; align-self: center;
-}
-main > .card:not(#result) label { font-size: 15px; margin: 12px 0 5px; }
-main > .card:not(#result) label:first-of-type { margin-top: 0; }
-main > .card:not(#result) input,
-main > .card:not(#result) select { font-size: 17px; padding: 8px 11px; }
-#go { margin-top: 16px; font-size: 18px; padding: 11px; }
+#og-left > .card:last-child, main > .card { margin-bottom: 0; }
+.price { white-space: nowrap; }
+h1 { text-wrap: balance; }
 """
 
-SUBTITLE = "An XGBoost model trained on real Immowelt listings, served by a live API."
+# Grow title and price together, keeping the page's 1.5rem : 2rem ratio, to
+# the largest size where the price fits its card, the title takes at most two
+# lines and the left column fits the frame.
+FIT_JS = """
+() => {
+  const main = document.querySelector('main');
+  const left = document.createElement('div');
+  left.id = 'og-left';
+  main.insertBefore(left, main.firstChild);
+  for (const sel of ['h1', '.subtitle', '#result']) left.appendChild(document.querySelector(sel));
+
+  const h1 = document.querySelector('h1');
+  // Never split "Real-Estate" at its hyphen.
+  h1.innerHTML = h1.innerHTML.replace(
+    'Real-Estate', '<span style="white-space:nowrap">Real-Estate</span>'
+  );
+  const price = document.querySelector('.price');
+  const room = main.clientHeight - 80;
+  const fits = () =>
+    price.scrollWidth <= price.clientWidth &&
+    h1.offsetHeight <= 3.2 * parseFloat(getComputedStyle(h1).fontSize) &&
+    left.offsetHeight <= room;
+  let k = 4;
+  const apply = () => { h1.style.fontSize = 24 * k + 'px'; price.style.fontSize = 32 * k + 'px'; };
+  for (apply(); !fits() && k > 1; k -= 0.02) apply();
+  return { title_px: Math.round(24 * k), price_px: Math.round(32 * k) };
+}
+"""
 
 
 def main() -> None:
@@ -65,7 +84,11 @@ def main() -> None:
 
     with sync_playwright() as p:
         browser = p.chromium.launch()
-        page = browser.new_page(viewport={"width": 1200, "height": 630}, color_scheme="light")
+        page = browser.new_page(
+            viewport={"width": WIDTH, "height": HEIGHT},
+            device_scale_factor=SCALE,
+            color_scheme="light",
+        )
         page.goto(args.url)
         # Let /locations fill the dropdowns first so they settle at "— any —".
         page.wait_for_load_state("networkidle")
@@ -82,9 +105,9 @@ def main() -> None:
         print("per m²:  ", page.inner_text("#priceSub"))
         print("note:    ", page.inner_text("#note"))
 
-        page.add_style_tag(content=CARD_CSS)
-        page.eval_on_selector(".subtitle", "(el, t) => { el.textContent = t; }", SUBTITLE)
-        page.screenshot(path=str(args.out), clip={"x": 0, "y": 0, "width": 1200, "height": 630})
+        page.add_style_tag(content=WIDE_CSS)
+        print("fitted:  ", page.evaluate(FIT_JS))
+        page.screenshot(path=str(args.out), clip={"x": 0, "y": 0, "width": WIDTH, "height": HEIGHT})
         browser.close()
 
     print(f"wrote {args.out} ({args.out.stat().st_size / 1024:.0f} KiB)")

@@ -160,7 +160,8 @@ def test_root_has_link_preview_tags(client: TestClient) -> None:
     for key in ("og:url", "og:image"):
         url = urlsplit(meta[key])
         assert url.scheme == "https" and url.netloc, f"{key} is not absolute: {meta[key]}"
-    assert (meta["og:image:width"], meta["og:image:height"]) == ("1200", "630")
+    # 1200x630 (LinkedIn's recommended size) rendered at 2x for sharper text.
+    assert (meta["og:image:width"], meta["og:image:height"]) == ("2400", "1260")
 
 
 def test_og_image_is_served_at_the_advertised_size(client: TestClient) -> None:

@@ -156,8 +156,9 @@
       <strong id="meanPct">—</strong>.
     </p>
     <p class="muted" id="testNote">
-      These numbers come from a fair test: some listings are held back during
-      training, and the model is graded on those, since it has never seen them.
+      How these numbers are measured: a test copy of the model learns from most
+      of the listings and is graded on the rest, which it has never seen. The
+      live model is then retrained on all of them.
     </p>
   </div>
 
@@ -294,9 +295,13 @@ function render(m) {
       ' and ' + fmtEUR(example * (1 + pct / 100)) + '.';
   }
   if (holdout.mape_pct != null) $('meanPct').textContent = Math.round(holdout.mape_pct) + '%';
-  if (holdout.n) {
-    $('testNote').textContent = 'These numbers come from a fair test: ' + fmtInt(holdout.n) +
-      ' listings were held back during training, and the model was graded on those, since it had never seen them.';
+  // The graded copy is fit on the train split only; the deployed model is refit
+  // on every row (see model/train.py), so n_rows_total really is what it learned from.
+  if (holdout.n && m.n_rows_total) {
+    $('testNote').textContent = 'How these numbers are measured: a test copy of the model learned from ' +
+      fmtInt(m.n_rows_total - holdout.n) + ' of the listings and was graded on the other ' +
+      fmtInt(holdout.n) + ', which it had never seen. The live model was then retrained on all ' +
+      fmtInt(m.n_rows_total) + ', so it has learned from slightly more than the version that was tested.';
   }
   if (m.version) $('version').textContent = m.version;
 }

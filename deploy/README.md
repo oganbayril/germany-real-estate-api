@@ -10,7 +10,7 @@ other services already on the box.
                          │                      │
               realestate-scrape.timer  ───►  Postgres (localhost)
               (Mon/Thu, gentle: 5 urls/city,  │      ▲
-               45-90s delay, 14d URL cache)    │      │
+               120-240s delay, 14d URL cache)  │      │
               realestate-train.timer  ─────────┘      │
               (Sat, retrains → restarts API)           │
               realestate-backup.timer ─────────────────┘
@@ -119,16 +119,16 @@ systemctl start realestate-train.service    # once the DB has >= RE_MIN_TRAIN_RO
 
 - **Scrape** — VPS timer, `Mon,Thu 03:00` + up to 6h jitter, `Persistent=true`
   (catches up a missed run on next boot/enable). Deliberately gentle:
-  `RE_SCRAPE_MAX_SEARCH_URLS_PER_CITY=5`, `RE_SCRAPE_DELAY_MIN_S=45` /
-  `_MAX_S=90`, and the sitemap-derived URL pool is cached for
+  `RE_SCRAPE_MAX_SEARCH_URLS_PER_CITY=5`, `RE_SCRAPE_DELAY_MIN_S=120` /
+  `_MAX_S=240`, and the sitemap-derived URL pool is cached for
   `RE_SCRAPE_DISCOVERY_CACHE_DAYS` (14) so a routine run is up to ~25 real
-  requests, skipping the sitemap walk entirely. In practice almost every run
-  since 2026-09-17 has been cut off after only 4-7 requests regardless of
-  pacing (see below) — the delay was pushed from 25-45s to 45-90s on
-  2026-10-03 to see whether a slower pace buys a longer session; raise the
-  caps only once runs are coming back `success` rather than `partial`. The
-  discovery cache lives at `data/immowelt_search_urls.json`; delete it to
-  force a rebuild.
+  requests, skipping the sitemap walk entirely. Delay history: 25-45s
+  (through 2026-09-17, cut off after 0-7 pages most runs) → 45-90s
+  (2026-10-03, up to 12 pages on 2 of 3 runs, still one full block) →
+  120-240s (2026-10-12), each step a single-variable test to see whether a
+  slower pace buys a longer session. Raise the caps only once runs are
+  coming back `success` rather than `partial`. The discovery cache lives at
+  `data/immowelt_search_urls.json`; delete it to force a rebuild.
 - **Retrain** — VPS, `Sat 04:00`. `realestate-train` refuses if the DB has
   `< RE_MIN_TRAIN_ROWS` usable rows or the latest scrape run didn't succeed
   (`blocked` status). A block that hits *after* real listings already landed is
@@ -156,11 +156,13 @@ This was actually the setup from 2026-09-05 to 2026-09-13, believed necessary
 because of a DataDome block — that turned out to mostly be a schema bug
 (`expose_id` too short for real IDs, invisible on SQLite, fatal on Postgres).
 Fixed, and a full gentle scrape from the VPS then ran clean once. Real
-throttling did show up afterward, though: every run since 2026-09-17 has come
-back `partial`, blocked after only 4-7 of the ~25 requested pages. It's stayed
-mild enough that the VPS keeps landing real data every run (947+ listings and
-growing as of 2026-10-03) rather than needing this fallback, so it's still
-documented but not in active use.
+throttling did show up afterward, though, and it's inconsistent rather than
+steadily improving or worsening: runs since 2026-09-17 have ranged from a full
+block on request #1 to 12 pages landed before a block, with no clear pattern
+by day or delay setting alone. It's stayed mild enough that the VPS keeps
+landing real data on most runs (947+ listings and growing as of 2026-10-03)
+rather than needing this fallback, so it's still documented but not in active
+use.
 
 `--email` sends a one-line summary via the shared Gmail app password
 (`RE_SMTP_*`); a blank password disables it. A scrape that fetches pages but

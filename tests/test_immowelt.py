@@ -126,3 +126,42 @@ def test_parse_listings_first_card_values(source: ImmoweltSource) -> None:
     assert second["living_area_sqm"] == pytest.approx(57.4)
     assert second["floor"] == 2
     assert second["postal_code"] == "10437"
+
+
+# -- Oct 2026 layout ------------------------------------------------------
+def test_parse_listings_2026_10_layout(source: ImmoweltSource) -> None:
+    # the rooms/area/floor line lost its cardmfe-keyfacts-testid; every run
+    # parsed 0 listings until the parser fell back to the unlabeled line
+    html = (FIXTURES / "search_berlin_2026-10.html").read_text(encoding="utf-8")
+    records = source.parse_listings(html, SearchTask(url="u", city="berlin"))
+    assert len(records) == 5
+    by_id = {r["expose_id"]: r for r in records}
+
+    first = by_id["15a88be2-8f1b-4e42-b7fd-d1bcf7af04ea"]
+    assert first["price_eur"] == 275_000
+    assert first["living_area_sqm"] == 63
+    assert first["rooms"] == 3
+    assert first["floor"] == 3
+    assert first["postal_code"] == "10785"
+    # "Tiergarten, Berlin (10785)": no district segment, so no district
+    assert first["district"] is None
+    assert first["energy_efficiency_class"] is None
+
+    second = by_id["9d16279f-9e09-4d46-b31b-9adb51dba7c2"]
+    assert second["living_area_sqm"] == pytest.approx(92.5)
+    assert second["energy_efficiency_class"] == "D"
+
+
+def test_unparseable_cards_raise_layout_changed(source: ImmoweltSource) -> None:
+    from realestate.scraper.base import LayoutChanged
+
+    card = (
+        '<div data-testid="serp-core-classified-card-testid">'
+        '<a href="/expose/15a88be2-8f1b-4e42-b7fd-d1bcf7af04ea">x</a>'
+        '<div data-testid="cardmfe-price-testid" aria-label="275000 €">275.000 €</div>'
+        "<div>no key facts anywhere</div></div>"
+    )
+    with pytest.raises(LayoutChanged, match="5 listing cards"):
+        source.parse_listings(card * 5, SearchTask(url="u", city="berlin"))
+    # a couple of odd cards on their own are normal, not a layout change
+    assert source.parse_listings(card * 2, SearchTask(url="u", city="berlin")) == []

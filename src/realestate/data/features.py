@@ -105,6 +105,21 @@ def _resolve_quarter(df: pd.DataFrame) -> pd.Series:
     return parsed
 
 
+_UMLAUTS = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
+
+
+def is_city_name(name: object, city: str) -> bool:
+    """Whether ``name`` is just the city itself ("Köln" for city ``koeln``).
+
+    Some immowelt addresses are "Quarter, City (plz)" with no district segment,
+    so the parsed "district" comes out as the city name -- which says nothing
+    the ``city`` column doesn't, and shouldn't show up as a district choice.
+    """
+    if not isinstance(name, str):
+        return False
+    return name.strip().lower().translate(_UMLAUTS) == city.strip().lower().translate(_UMLAUTS)
+
+
 def quarter_from_address(value: object) -> str | None:
     """Ortsteil from an address like "Street 1, Moabit, Mitte (10553)" -> "Moabit".
 

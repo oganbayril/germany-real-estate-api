@@ -16,7 +16,7 @@ from realestate.config import Settings, get_settings
 from realestate.db.models import ScrapeRun
 from realestate.db.repository import finish_scrape_run, start_scrape_run, upsert_listing
 from realestate.db.session import session_scope
-from realestate.scraper.base import Source
+from realestate.scraper.base import LayoutChanged, Source
 from realestate.scraper.client import BlockedError, ScrapeClient, ScrapeError
 from realestate.scraper.immowelt import ImmoweltSource
 
@@ -86,6 +86,11 @@ def run_scrape(
         else:
             status, error = "blocked", str(exc)
             log.error("scrape blocked: %s", exc)
+    except LayoutChanged as exc:
+        # stop at the first such page: every later page would fail the same way
+        status, error = "failed", f"layout changed: {exc}"
+        stats.errors.append(error)
+        log.error("scrape stopped: %s", exc)
     except Exception as exc:
         status, error = "failed", str(exc)
         raise
@@ -93,7 +98,10 @@ def run_scrape(
         if status == "success" and stats.pages_fetched >= 3 and stats.exposes_seen == 0:
             # pages loaded but nothing parsed out of any of them -> soft block
             status = "blocked"
-            error = error or "fetched pages but parsed 0 listings (likely a soft block)"
+            error = error or (
+                "fetched pages but parsed 0 listings (a soft block, or a layout change "
+                "the parser didn't detect -- check the response sizes in diagnostics)"
+            )
         elif status == "success" and stats.errors:
             status = "partial"
         diagnostics = _diagnostics(client.request_log, settings, cap)

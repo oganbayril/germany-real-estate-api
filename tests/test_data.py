@@ -12,6 +12,7 @@ from realestate.data.features import (
     FEATURE_COLUMNS,
     TARGET,
     build_feature_frame,
+    is_city_name,
     quarter_from_address,
     target_to_price,
 )
@@ -142,3 +143,18 @@ def test_single_row_inference_path_has_no_target() -> None:
 def test_target_round_trip() -> None:
     prices = np.array([150_000.0, 640_000.0])
     assert target_to_price(np.log(prices)) == pytest.approx(prices)
+
+
+@pytest.mark.parametrize(
+    ("name", "city", "expected"),
+    [
+        ("Berlin", "berlin", True),
+        ("Köln", "koeln", True),
+        (" München ", "muenchen", True),
+        ("Mitte", "berlin", False),
+        ("Hamburg-Nord", "hamburg", False),
+        (None, "berlin", False),
+    ],
+)
+def test_is_city_name(name: object, city: str, expected: bool) -> None:
+    assert is_city_name(name, city) is expected

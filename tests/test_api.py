@@ -319,6 +319,27 @@ def test_locations_grouped_per_city_from_real_data(client: TestClient) -> None:
     assert body["leipzig"]["districts"] == ["Nord"]
 
 
+def test_locations_never_offer_the_city_as_its_own_district(client: TestClient) -> None:
+    # a row stored before the scraper started dropping city-name "districts"
+    with api_main.session_scope() as session:
+        session.add(
+            Listing(
+                expose_id="old-row",
+                city="berlin",
+                price_eur=400_000,
+                living_area_sqm=70,
+                listing_status="active",
+                district="Berlin",
+                address="Tiergarten, Berlin (10785)",
+            )
+        )
+        session.commit()
+
+    berlin = client.get("/locations").json()["berlin"]
+    assert "Berlin" not in berlin["districts"]
+    assert "Tiergarten" in berlin["quarters"]
+
+
 def test_predict_503_without_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(registry, "_models_root", lambda: tmp_path)  # empty -> no model
     with TestClient(api_main.app) as c:

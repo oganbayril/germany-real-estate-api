@@ -50,6 +50,19 @@ class SoftBlockedSource(FakeSource):
         return []
 
 
+class LayoutChangedSource(FakeSource):
+    """Pages load fine, but the parser no longer understands the cards."""
+
+    def discover(self, fetch):  # noqa: ARG002
+        for i in range(3):
+            yield SearchTask(url=f"https://example.test/search/{i}", city="berlin")
+
+    def parse_listings(self, html: str, task: SearchTask) -> list[dict]:  # noqa: ARG002
+        from realestate.scraper.base import LayoutChanged
+
+        raise LayoutChanged(f"24 listing cards on {task.url} but none parsed")
+
+
 class BlockedAfterProgressSource(FakeSource):
     """First page succeeds (real listings land), second page is a hard block."""
 
@@ -208,3 +221,21 @@ def test_block_report_lists_runs(
     out = capsys.readouterr().out
     assert "partial" in out
     assert "403" in out
+
+
+def test_layout_change_stops_run_and_marks_failed(
+    wired_db: sessionmaker[Session], settings: Settings, httpx_mock: HTTPXMock
+) -> None:
+    httpx_mock.add_response(url="https://example.test/robots.txt", text="User-agent: *\nAllow: /")
+    httpx_mock.add_response(url="https://example.test/search/0", text="<html>cards</html>")
+
+    stats = pipeline.run_scrape(cities=["berlin"], source=LayoutChangedSource(), settings=settings)
+
+    session = wired_db()
+    run = session.query(ScrapeRun).one()
+    assert run.status == "failed"
+    assert run.error.startswith("layout changed:")
+    assert stats.errors  # so the email subject says the scrape had errors
+    # stopped after the first page instead of fetching the rest
+    assert len(httpx_mock.get_requests(url="https://example.test/search/1")) == 0
+    session.close()

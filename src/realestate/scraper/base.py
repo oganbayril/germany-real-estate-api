@@ -24,6 +24,14 @@ Fetcher = Callable[[str], str]
 Record = dict[str, Any]
 
 
+class LayoutChanged(RuntimeError):
+    """A results page has listing cards, but none of them could be parsed.
+
+    Means the site's markup changed under the parser -- not a block, and not
+    something more requests will fix, so the run should stop and say so.
+    """
+
+
 @dataclass(frozen=True)
 class SearchTask:
     """One search-results page to fetch, and the city it belongs to."""

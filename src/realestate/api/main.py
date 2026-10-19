@@ -36,7 +36,7 @@ from realestate.api.schemas import (
     PriceSummary,
     StatsResponse,
 )
-from realestate.data.features import quarter_from_address
+from realestate.data.features import is_city_name, quarter_from_address
 from realestate.db.models import Listing, ScrapeRun
 from realestate.db.session import session_scope
 from realestate.model.predict import PricePredictor
@@ -162,7 +162,9 @@ def locations(request: Request) -> dict[str, CityLocations]:
     districts: dict[str, set[str]] = defaultdict(set)
     quarters: dict[str, set[str]] = defaultdict(set)
     for city, district, address in rows:
-        if district:
+        # rows stored before the scraper dropped city-name "districts" still
+        # carry them; never offer "Berlin" as a district of Berlin
+        if district and not is_city_name(district, city):
             districts[city].add(district)
         quarter = quarter_from_address(address)
         if quarter:

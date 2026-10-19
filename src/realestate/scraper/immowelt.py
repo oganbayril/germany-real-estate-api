@@ -26,7 +26,8 @@ from pathlib import Path
 from selectolax.parser import HTMLParser, Node
 
 from realestate.config import get_settings
-from realestate.scraper.base import Fetcher, Record, SearchTask
+from realestate.data.features import is_city_name
+from realestate.scraper.base import Fetcher, LayoutChanged, Record, SearchTask
 
 log = logging.getLogger(__name__)
 
@@ -48,6 +49,8 @@ _LOC_RE = re.compile(r"<loc>([^<]+)</loc>")
 _EXPOSE_RE = re.compile(r"/expose/([0-9a-f-]{36})")
 _CITY_SEG_RE = re.compile(r"/([a-z]+)-\d{4,5}/")
 _NUM_RE = re.compile(r"-?\d[\d.]*(?:,\d+)?")
+_MIN_CARDS_FOR_LAYOUT_CHECK = 5
+_KEYFACTS_RE = re.compile(r"\d\s*(?:Zimmer|m²)")
 _FLOOR_RE = re.compile(r"(\d+)\.\s*(?:OG|Geschoss|Obergeschoss)", re.IGNORECASE)
 
 
@@ -163,10 +166,18 @@ class ImmoweltSource:
     def parse_listings(self, html: str, task: SearchTask) -> list[Record]:
         tree = HTMLParser(html)
         records: dict[str, Record] = {}
-        for card in tree.css("[data-testid='serp-core-classified-card-testid']"):
+        cards = tree.css("[data-testid='serp-core-classified-card-testid']")
+        for card in cards:
             record = _card_record(card, task.city)
             if record is not None:
                 records.setdefault(record["expose_id"], record)
+        # A few odd cards (no price, a project teaser) are normal; a full page of
+        # cards with nothing usable is the markup changing under the parser.
+        if len(cards) >= _MIN_CARDS_FOR_LAYOUT_CHECK and not records:
+            raise LayoutChanged(
+                f"{len(cards)} listing cards on {task.url} but none parsed -- "
+                "immowelt's card markup has probably changed"
+            )
         return list(records.values())
 
 
@@ -181,12 +192,15 @@ def _card_record(card: Node, city: str) -> Record | None:
     expose_id = match.group(1)
 
     price = _price(card)
-    rooms, area, floor = _keyfacts(_tid_text(card, "cardmfe-keyfacts-testid"))
+    keyfacts = _keyfacts_text(card)
+    rooms, area, floor = _keyfacts(keyfacts)
     if price is None or area is None:
         return None
 
     address = _tid_text(card, "cardmfe-description-box-address")
     district, postal = _split_address(address)
+    if is_city_name(district, city):
+        district = None  # "Quarter, City (plz)" address: there is no district segment
 
     return {
         "expose_id": expose_id,
@@ -206,7 +220,7 @@ def _card_record(card: Node, city: str) -> Record | None:
         "raw": {
             "source": "immowelt-card",
             "price_per_sqm": round(price / area, 2) if area else None,
-            "keyfacts": _tid_text(card, "cardmfe-keyfacts-testid"),
+            "keyfacts": keyfacts,
         },
     }
 
@@ -216,6 +230,28 @@ def _tid_text(node: Node, testid: str) -> str | None:
     if found is None:
         return None
     return re.sub(r"\s+", " ", found.text(separator=" ", strip=True)) or None
+
+
+def _keyfacts_text(card: Node) -> str | None:
+    """The "3 Zimmer · 63 m² · 3. Geschoss" line.
+
+    Until Oct 2026 it had its own testid; now it's an unlabeled div (hashed CSS
+    class) in the description box, so fall back to the innermost element there
+    that reads like key facts and isn't the price.
+    """
+    text = _tid_text(card, "cardmfe-keyfacts-testid")
+    if text:
+        return text
+    box = card.css_first("[data-testid='cardmfe-description-box-text-test-id']")
+    if box is None:
+        return None
+    for node in box.css("div, span"):
+        if next(node.iter(include_text=False), None) is not None:
+            continue  # not innermost
+        text = re.sub(r"\s+", " ", node.text(separator=" ", strip=True))
+        if "€" not in text and _KEYFACTS_RE.search(text):
+            return text
+    return None
 
 
 def _price(card: Node) -> float | None:

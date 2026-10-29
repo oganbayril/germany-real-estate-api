@@ -9,8 +9,16 @@ import pandas as pd
 import pytest
 
 from realestate.model import registry
+from realestate.model import train as train_mod
+from realestate.model.candidates import CANDIDATES
 from realestate.model.predict import PricePredictor
-from realestate.model.train import TrainingBlocked, build_pipeline, check_not_worse, train_model
+from realestate.model.train import (
+    TrainingBlocked,
+    build_pipeline,
+    check_not_worse,
+    live_model_type,
+    train_model,
+)
 
 
 @pytest.fixture
@@ -81,7 +89,7 @@ def _tmp_model_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 def test_train_model_reports_reasonable_metrics(synthetic_listings: pd.DataFrame) -> None:
     result = train_model(synthetic_listings, seed=0)
 
-    assert set(result.metrics) == {"cv", "holdout", "holdout_city_only"}
+    assert set(result.metrics) == {"cv", "cv_city_only", "holdout", "holdout_city_only"}
     holdout = result.metrics["holdout"]
     # the synthetic signal is strong -> the model should be well within 25% MAPE
     assert holdout["mape_pct"] < 25
@@ -164,6 +172,121 @@ def test_guard_ignores_sample_bootstrap_model() -> None:
     # The 180-row sample model isn't a fair yardstick for one on real data.
     _live_model(10.0, source="sample")
     check_not_worse(_new(20.0), max_regression_pts=3.0)
+
+
+def test_guard_blocks_city_only_regression() -> None:
+    registry.save(
+        build_pipeline(),
+        metrics={
+            "holdout": {"median_ape_pct": 15.0},
+            "holdout_city_only": {"median_ape_pct": 17.0},
+        },
+        metadata={},
+    )
+    new = {"holdout": {"median_ape_pct": 15.0}, "holdout_city_only": {"median_ape_pct": 20.5}}
+    with pytest.raises(TrainingBlocked, match="city-only"):
+        check_not_worse(new, max_regression_pts=3.0)
+
+
+# -- automatic model selection -------------------------------------------
+def _fake_scores(monkeypatch: pytest.MonkeyPatch, city_only: dict[str, float]) -> None:
+    """Make each candidate's CV score a fixed number instead of fitting."""
+
+    def fake(x, y, model_type, cv):  # noqa: ARG001
+        m = {"median_ape_pct": city_only[model_type], "mape_pct": 0.0, "r2_eur": 0.0}
+        return {"cv": dict(m), "cv_city_only": dict(m)}
+
+    monkeypatch.setattr(train_mod, "_cv_metrics", fake)
+
+
+def _select(incumbent: str | None, margin: float = 1.0) -> train_mod.Selection:
+    return train_mod.select_model(
+        pd.DataFrame(),
+        np.array([]),
+        candidates=["xgboost", "hist_gradient_boosting", "linear_regression"],
+        incumbent=incumbent,
+        margin_pts=margin,
+        cv=None,
+    )
+
+
+def test_selection_picks_best_when_nothing_is_live(monkeypatch: pytest.MonkeyPatch) -> None:
+    _fake_scores(
+        monkeypatch, {"xgboost": 18, "hist_gradient_boosting": 16, "linear_regression": 30}
+    )
+    sel = _select(None)
+    assert sel.chosen == "hist_gradient_boosting"
+    assert not sel.switched
+
+
+def test_selection_keeps_incumbent_within_margin(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 0.6 pts better is inside the noise: don't flip the deployed type for it
+    _fake_scores(
+        monkeypatch, {"xgboost": 17.0, "hist_gradient_boosting": 16.4, "linear_regression": 30}
+    )
+    sel = _select("xgboost")
+    assert sel.chosen == "xgboost"
+    assert not sel.switched
+    assert "keeping XGBoost" in sel.reason
+
+
+def test_selection_switches_on_a_clear_win(monkeypatch: pytest.MonkeyPatch) -> None:
+    _fake_scores(
+        monkeypatch, {"xgboost": 18.0, "hist_gradient_boosting": 16.5, "linear_regression": 30}
+    )
+    sel = _select("xgboost")
+    assert sel.chosen == "hist_gradient_boosting"
+    assert sel.switched
+    assert sel.reason.startswith("switched XGBoost -> HistGradientBoosting")
+
+
+def test_selection_ignores_an_incumbent_that_is_no_longer_a_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fake_scores(
+        monkeypatch, {"xgboost": 18, "hist_gradient_boosting": 16, "linear_regression": 30}
+    )
+    assert _select("random_forest").chosen == "hist_gradient_boosting"
+
+
+def test_train_model_chooses_between_all_candidates(synthetic_listings: pd.DataFrame) -> None:
+    result = train_model(synthetic_listings, seed=0, candidates=list(CANDIDATES))
+    meta = result.metadata
+    assert set(meta["selection"]["candidates"]) == set(CANDIDATES)
+    assert meta["model_type"] == meta["selection"]["chosen"]
+    assert meta["model_label"] == CANDIDATES[meta["model_type"]].label
+    # the price is a non-linear city x area interaction: a tree model must win
+    assert meta["model_type"] != "linear_regression"
+    assert set(result.metrics) == {"cv", "cv_city_only", "holdout", "holdout_city_only"}
+    assert sum(meta["city_rows"].values()) == meta["n_rows_total"]
+
+
+def test_train_model_rejects_unknown_candidate(synthetic_listings: pd.DataFrame) -> None:
+    with pytest.raises(ValueError, match="unknown model type"):
+        train_model(synthetic_listings, candidates=["xgboost", "catboost"])
+
+
+def test_live_model_type_defaults_for_older_artifacts() -> None:
+    assert live_model_type() is None
+    registry.save(build_pipeline(), metrics={}, metadata={})  # no "model_type" key
+    assert live_model_type() == "xgboost"
+
+
+@pytest.mark.parametrize("model_type", ["hist_gradient_boosting", "random_forest"])
+def test_non_default_model_types_serve_predictions(
+    synthetic_listings: pd.DataFrame, model_type: str
+) -> None:
+    result = train_model(synthetic_listings, seed=0, candidates=[model_type])
+    registry.save(result.pipeline, metrics=result.metrics, metadata=result.metadata)
+    predictor = PricePredictor.load()
+    assert predictor.metadata["model_type"] == model_type
+    # a city-only request, and one naming a district the model never saw
+    for record in (
+        {"city": "berlin", "living_area_sqm": 80.0},
+        {"city": "berlin", "living_area_sqm": 80.0, "district": "Nowhere"},
+    ):
+        out = predictor.predict_one(record)
+        assert 100_000 < out.price_eur < 2_000_000
 
 
 # -- prediction ---------------------------------------------------

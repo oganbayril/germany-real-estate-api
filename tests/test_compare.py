@@ -1,4 +1,4 @@
-"""Candidate-model comparison (not part of the production training path)."""
+"""Manual candidate-model comparison."""
 
 from __future__ import annotations
 
@@ -6,7 +6,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from realestate.model.compare import CANDIDATES, PRODUCTION, compare_models
+from realestate.model.candidates import CANDIDATES
+from realestate.model.compare import compare_models
 
 
 @pytest.fixture
@@ -41,7 +42,7 @@ def synthetic_listings() -> pd.DataFrame:
 def test_compare_models_scores_every_candidate(synthetic_listings: pd.DataFrame) -> None:
     results = compare_models(synthetic_listings, seed=0)
 
-    assert set(results) == set(CANDIDATES) | {PRODUCTION}
+    assert set(results) == set(CANDIDATES)
     for by_split in results.values():
         assert set(by_split) == {"holdout", "holdout_city_only"}
         metrics = by_split["holdout"]

@@ -6,9 +6,12 @@ Given a few attributes of a German apartment listing, it predicts the **asking
 price in euros**. Served at `POST /predict` on
 <https://germany-real-estate.duckdns.org>.
 
-- **Type:** gradient-boosted trees (`XGBRegressor`) on `ln(price)`, wrapped in an
-  sklearn `Pipeline` with an `OrdinalEncoder` for the categorical location
-  columns. Predictions are exponentiated back to euros.
+- **Type:** a regressor on `ln(price)`, chosen automatically at each weekly
+  retrain from four model types (see [Model selection](#model-selection)) and
+  wrapped in an sklearn `Pipeline` with an `OrdinalEncoder` for the categorical
+  location columns. Predictions are exponentiated back to euros. The live type
+  is `model_label` in [/model](https://germany-real-estate.duckdns.org/model);
+  until the first automatic selection it was always XGBoost.
 - **Inputs:** `city`, `living_area_sqm` (required); `rooms`, `floor`,
   `postal_code`, `district`, `quarter`, `energy_efficiency_class` (optional).
   Engineered: `area_per_room`, an energy-class ordinal, and missing-value flags.
@@ -79,6 +82,36 @@ Feature importance is led by `rooms`, `city`, and `living_area_sqm`, then the
 location columns (`postal_prefix`, `district`, `quarter`).
 
 ## Model selection
+
+### Automatic, at every retrain (since 2026-10-29)
+
+The candidates live in `src/realestate/model/candidates.py`: XGBoost,
+`HistGradientBoostingRegressor`, a random forest, and linear regression as a
+floor. Each is built the same way as production -- ordinal-encoded categoricals
+with unknown and missing both mapped to NaN, the same location-dropout copies --
+so only the estimator varies. (The tree models handle NaN natively; linear
+regression imputes.)
+
+Each Saturday `realestate-train`:
+
+1. Cross-validates every candidate (5 folds) on the **training split only**.
+   The hold-out is never used for choosing, so the published hold-out metrics
+   stay an honest estimate for whatever was chosen.
+2. Ranks them by **city-only median APE** -- the demo's default request, and
+   the main use -- then by as-scraped median APE.
+3. Keeps the live model's type unless the best candidate beats it by at least
+   `RE_TRAIN_SWITCH_MARGIN_PTS` (default 1) points city-only. The manual runs
+   below showed the top two moving by 1-2 points between splits, so a smaller
+   lead is noise; this stops the deployed type flipping week to week.
+4. Fits the chosen type, grades it on the hold-out, refits on every row, and
+   goes through the deploy guard (see [Retraining](#retraining)).
+
+The full table, the reason for the choice, and whether the type changed are
+saved in the artifact's `metadata.json` (`selection`) and sent in the retrain
+email. `realestate-compare-models` still prints the same candidates on one
+hold-out for a manual look.
+
+### History: manual comparisons
 
 XGBoost was the first thing tried and never actually benchmarked against
 alternatives — `realestate-compare-models` (`src/realestate/model/compare.py`)
@@ -153,10 +186,11 @@ Re-run with `realestate-compare-models`.
 
 ## Retraining
 
-`realestate-train` runs weekly on the VPS. It refuses to retrain if the latest
+`realestate-train` runs weekly on the VPS and picks the model type first (see
+[Model selection](#model-selection)). It refuses to retrain if the latest
 scrape failed or the dataset is below `RE_MIN_TRAIN_ROWS`. It also won't replace
-the live model with one whose hold-out median error is more than
-`RE_MAX_ERROR_REGRESSION_PTS` (default 3) percentage points worse; the margin
+the live model with one whose hold-out median error, as scraped or city-only, is
+more than `RE_MAX_ERROR_REGRESSION_PTS` (default 3) percentage points worse; the margin
 absorbs the week-to-week wobble from the hold-out split changing as data grows,
 so it only catches a real regression (e.g. a bad scrape). On success it
 restarts the API so the new artifact (`models/<timestamp>/`) is picked up. Each

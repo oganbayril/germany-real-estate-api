@@ -48,6 +48,16 @@ class Settings(BaseSettings):
     # many percentage points worse than the live model's. Some slack is needed:
     # the hold-out split changes as data grows, so the number drifts run to run.
     max_error_regression_pts: float = 3.0
+    # Model types the weekly retrain cross-validates and chooses between (names
+    # from realestate.model.candidates), and how much better (city-only median
+    # % error, in points) a type must score to replace the live model's type.
+    train_candidates: Annotated[list[str], NoDecode] = Field(
+        default=["xgboost", "hist_gradient_boosting", "random_forest", "linear_regression"]
+    )
+    train_switch_margin_pts: float = 1.0
+    # A city is offered on the demo page once the live model learned from at
+    # least this many of its listings (it is scraped and trained on before that).
+    min_city_rows: int = 150
 
     # --- Filesystem ---
     data_dir: Path = PROJECT_ROOT / "data"
@@ -70,7 +80,7 @@ class Settings(BaseSettings):
     def email_configured(self) -> bool:
         return bool(self.smtp_user and self.smtp_password and self.email_to)
 
-    @field_validator("scrape_cities", mode="before")
+    @field_validator("scrape_cities", "train_candidates", mode="before")
     @classmethod
     def _split_cities(cls, v: object) -> object:
         if isinstance(v, str):
@@ -80,8 +90,13 @@ class Settings(BaseSettings):
     @field_validator("scrape_cities")
     @classmethod
     def _cities_non_empty(cls, v: list[str]) -> list[str]:
+        from realestate.cities import CITIES
+
         if not v:
             raise ValueError("scrape_cities must not be empty")
+        unknown = [c for c in v if c not in CITIES]
+        if unknown:
+            raise ValueError(f"unknown city slug(s) {unknown}; add them to realestate/cities.py")
         return v
 
     @field_validator("data_dir", "model_dir")

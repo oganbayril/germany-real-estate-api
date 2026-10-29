@@ -51,7 +51,7 @@ flowchart LR
 | 1 | Schema, SQLAlchemy models, Alembic, upsert repository | done |
 | 2 | Immowelt scraper (sitemap discovery, rate-limited, robots-aware) | done |
 | 3 | Cleaning + feature engineering | done |
-| 4 | XGBoost training + eval + artifact registry | done |
+| 4 | Training + eval + artifact registry; weekly automatic model-type selection | done |
 | 5 | FastAPI serving (`/predict`, `/model`, `/stats`, `/health`) | done |
 | 6 | systemd units, Caddy, backups, run-summary emails, local scraper | done |
 | 7 | CI, dependabot, architecture diagram, model card | done |
@@ -75,7 +75,7 @@ uv run realestate-scrape run --cities berlin --max-searches 5   # scrape
 uv run realestate-scrape run --dry-run                          # fetch + parse, no writes
 uv run realestate-scrape fetch-fixture <url>                    # save HTML for a parser test
 uv run realestate-train --help
-uv run realestate-compare-models --help   # benchmark XGBoost against baselines
+uv run realestate-compare-models --help   # all candidate model types on one hold-out
 uv run uvicorn realestate.api.main:app --reload
 ```
 
@@ -125,9 +125,12 @@ columns (`city`, `district`, `postal_prefix`). Target is `price_log = ln(price)`
 
 `realestate-train` loads listings (or `--from-sample`), cleans, builds features,
 and fits an sklearn `Pipeline`: `OrdinalEncoder` on the categorical location
-columns (ordinal, not one-hot — cardinality is high and XGBoost splits ordinal
-codes fine) → `XGBRegressor` on `price_log`. XGBoost handles NaNs natively, so
-there is no imputation step.
+columns (ordinal, not one-hot — cardinality is high and tree models split ordinal
+codes fine) → a regressor on `price_log`. The regressor is chosen each run from
+the candidates in `model/candidates.py` (XGBoost, HistGradientBoosting, random
+forest, linear regression) by cross-validation on the training split, ranked by
+city-only error, keeping the live type unless another wins by a clear margin —
+see [MODEL_CARD.md](MODEL_CARD.md#model-selection).
 
 Metrics are reported in euros (predictions exponentiated back from log): 5-fold
 out-of-fold CV on the train split, plus a held-out test split. The saved artifact

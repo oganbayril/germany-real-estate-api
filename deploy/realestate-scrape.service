@@ -10,7 +10,10 @@ Group=realestate
 WorkingDirectory=/opt/realestate
 EnvironmentFile=/opt/realestate/.env
 ExecStart=/opt/realestate/.venv/bin/realestate-scrape run --email
-TimeoutStartSec=2h
+# ~3 min per page at the gentle delay: 10 cities x 5 pages is ~2.5h, plus a
+# sitemap walk when the URL pool is rebuilt. A kill mid-run would leave the
+# run row stuck at "running".
+TimeoutStartSec=5h
 
 NoNewPrivileges=true
 PrivateTmp=true

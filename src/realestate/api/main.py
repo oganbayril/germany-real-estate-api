@@ -36,6 +36,8 @@ from realestate.api.schemas import (
     PriceSummary,
     StatsResponse,
 )
+from realestate.cities import city_name
+from realestate.config import get_settings
 from realestate.data.features import is_city_name, quarter_from_address
 from realestate.db.models import Listing, ScrapeRun
 from realestate.db.session import session_scope
@@ -146,12 +148,36 @@ def predict(request: Request, body: PredictRequest, predictor: PredictorDep) -> 
     )
 
 
+def _min_city_rows() -> int:
+    return get_settings().min_city_rows
+
+
+def _offered_cities(predictor: PricePredictor | None, rows_in_db: dict[str, int]) -> list[str]:
+    """Cities the demo page offers, most listings first.
+
+    A newly scraped city only appears once the live model has learned from at
+    least ``RE_MIN_CITY_ROWS`` of its listings. Models trained before per-city
+    counts were recorded offer every city they saw; with no model loaded,
+    every city with data is listed (predictions 503 anyway).
+    """
+    if predictor is None:
+        counts = rows_in_db
+    else:
+        meta = predictor.metadata
+        if "city_rows" in meta:
+            threshold = _min_city_rows()
+            counts = {c: n for c, n in meta["city_rows"].items() if n >= threshold}
+        else:
+            counts = {c: rows_in_db.get(c, 0) for c in meta.get("cities", [])}
+    return sorted(counts, key=lambda c: (-counts[c], c))
+
+
 @app.get("/locations", response_model=dict[str, CityLocations])
 @limiter.limit("60/minute")
 def locations(request: Request) -> dict[str, CityLocations]:
-    """Real district/quarter values seen per city -- feeds the demo page's
-    dropdowns so a request can only ever name a place the model actually knows
-    about, instead of free text."""
+    """The cities the demo page offers, with the real district/quarter values
+    seen in each -- so a request can only ever name a place the model actually
+    knows about, instead of free text."""
     with session_scope() as session:
         rows = session.execute(
             select(Listing.city, Listing.district, Listing.address).where(
@@ -170,9 +196,18 @@ def locations(request: Request) -> dict[str, CityLocations]:
         if quarter:
             quarters[city].add(quarter)
 
+    rows_in_db: dict[str, int] = defaultdict(int)
+    for city, _, _ in rows:
+        rows_in_db[city] += 1
+
+    predictor: PricePredictor | None = getattr(request.app.state, "predictor", None)
     return {
-        city: CityLocations(districts=sorted(districts[city]), quarters=sorted(quarters[city]))
-        for city in sorted(set(districts) | set(quarters))
+        city: CityLocations(
+            name=city_name(city),
+            districts=sorted(districts[city]),
+            quarters=sorted(quarters[city]),
+        )
+        for city in _offered_cities(predictor, rows_in_db)
     }
 
 
@@ -185,6 +220,10 @@ def model_info(predictor: PredictorDep) -> ModelInfoResponse:
         n_rows_total=meta.get("n_rows_total"),
         feature_columns=meta.get("feature_columns", []),
         cities=meta.get("cities", []),
+        city_rows=meta.get("city_rows", {}),
+        model_type=meta.get("model_type", "xgboost" if meta else None),
+        model_label=meta.get("model_label", "XGBoost" if meta else None),
+        selection_reason=(meta.get("selection") or {}).get("reason"),
         metrics=predictor.metrics,
     )
 

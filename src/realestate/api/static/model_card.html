@@ -141,6 +141,7 @@
       <div class="fact"><div class="num" id="nCities">—</div><div class="lbl" id="citiesLbl">cities</div></div>
       <div class="fact"><div class="num" id="trainedOn">—</div><div class="lbl">last retrained (it relearns every week as new listings arrive)</div></div>
     </div>
+    <p id="pendingCities" class="muted" style="margin-top:14px" hidden></p>
   </div>
 
   <div class="card">
@@ -166,6 +167,21 @@
       How these numbers are measured: a test copy of the model learns from most
       of the listings and is graded on the rest, which it has never seen. The
       live model is then retrained on all of them.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>How the model is picked</h2>
+    <p>
+      There are many ways to build a price predictor. Every week, several
+      different kinds are trained on the same listings and tested the same way,
+      and the one that estimates prices best from just the city, size and rooms
+      is used.
+    </p>
+    <p>
+      It only switches to a different kind when the new one is clearly better,
+      so the estimates don't jump around because of small, random differences
+      from one week to the next.
     </p>
   </div>
 
@@ -234,7 +250,9 @@
   <div class="card">
     <h2>For developers</h2>
     <p class="muted">
-      Gradient-boosted trees (XGBoost) predicting the log of the asking price.
+      <span id="modelLabel">A regression model</span> predicting the log of the
+      asking price, chosen at each retrain by cross-validation from several model
+      types<span id="selectionReason"></span>.
       Model version <code id="version">—</code>.
       Raw metrics as JSON at <a href="/model">/model</a> ·
       full technical write-up in
@@ -254,7 +272,6 @@ const $ = (id) => document.getElementById(id);
 const fmtEUR = (n) => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(n);
 const fmtInt = (n) => new Intl.NumberFormat('en-GB').format(n);
 
-const CITY_NAMES = { berlin: 'Berlin', hamburg: 'Hamburg', koeln: 'Köln', leipzig: 'Leipzig', muenchen: 'München' };
 
 const themeButtons = document.querySelectorAll('[data-theme-choice]');
 function applyThemeChoice(choice) {
@@ -282,11 +299,6 @@ function render(m) {
   const holdout = m.metrics?.holdout ?? {};
   if (m.n_rows_total) $('nRows').textContent = fmtInt(m.n_rows_total);
 
-  const cities = (m.cities ?? []).map((c) => CITY_NAMES[c] ?? c);
-  if (cities.length) {
-    $('nCities').textContent = cities.length;
-    $('citiesLbl').textContent = 'cities: ' + cities.join(', ');
-  }
 
   if (m.trained_at) {
     $('trainedOn').textContent = new Date(m.trained_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -316,6 +328,28 @@ function render(m) {
       fmtInt(m.n_rows_total) + ', so it has learned from slightly more than the version that was tested.';
   }
   if (m.version) $('version').textContent = m.version;
+  if (m.model_label) $('modelLabel').textContent = m.model_label;
+  if (m.selection_reason) $('selectionReason').textContent = ' (this week: ' + m.selection_reason + ')';
+
+  // Cities still being collected: scraped and learned from, but not offered on
+  // the estimator until there are enough listings to price them sensibly.
+  const rows = m.city_rows ?? {};
+  fetch('/locations')
+    .then((r) => (r.ok ? r.json() : {}))
+    .then((offered) => {
+      const names = Object.values(offered).map((c) => c.name);
+      if (!names.length) return;
+      $('nCities').textContent = names.length;
+      $('citiesLbl').textContent = 'cities: ' + names.join(', ');
+      const pending = Object.keys(rows).filter((c) => !(c in offered));
+      if (pending.length) {
+        $('pendingCities').textContent = 'Listings from ' + pending.length + ' more ' +
+          (pending.length === 1 ? 'city are' : 'cities are') +
+          ' already being collected; they appear on the estimator once there are enough to price them sensibly.';
+        $('pendingCities').hidden = false;
+      }
+    })
+    .catch(() => { /* the facts card just keeps its placeholder */ });
 }
 
 fetch('/model')

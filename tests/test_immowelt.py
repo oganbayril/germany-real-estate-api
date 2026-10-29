@@ -92,6 +92,39 @@ def test_discover_rebuilds_when_cache_stale(tmp_path: Path) -> None:
     assert calls  # stale -> re-walked
 
 
+def test_discover_handles_multi_word_city_slugs(tmp_path: Path) -> None:
+    src = ImmoweltSource(cities=["frankfurt"], cache_path=tmp_path / "c.json")
+    pages = _sitemaps(["frankfurt-am-main", "frankfurt-oder"])
+    tasks = list(src.discover(lambda url: pages[url]))
+    assert tasks
+    assert all("/frankfurt-am-main-" in t.url and t.city == "frankfurt" for t in tasks)
+
+
+def test_discover_rebuilds_fresh_cache_when_a_city_is_added(tmp_path: Path) -> None:
+    cache = tmp_path / "c.json"
+    pages = _sitemaps(["berlin", "dresden"], per=4)
+    list(ImmoweltSource(cities=["berlin"], cache_path=cache).discover(lambda u: pages[u]))
+
+    calls: list[str] = []
+    src = ImmoweltSource(cities=["berlin", "dresden"], cache_path=cache)
+    tasks = list(src.discover(lambda u: (calls.append(u), pages[u])[1]))
+    assert calls  # cache is fresh, but was never built for dresden
+    assert {t.city for t in tasks} == {"berlin", "dresden"}
+
+
+def test_discover_does_not_rebuild_for_a_city_with_no_urls(tmp_path: Path) -> None:
+    cache = tmp_path / "c.json"
+    pages = _sitemaps(["berlin"], per=4)  # no hannover urls anywhere
+    list(
+        ImmoweltSource(cities=["berlin", "hannover"], cache_path=cache).discover(lambda u: pages[u])
+    )
+
+    calls: list[str] = []
+    src = ImmoweltSource(cities=["berlin", "hannover"], cache_path=cache)
+    list(src.discover(lambda u: (calls.append(u), pages[u])[1]))
+    assert calls == []  # asked for already; re-walking every run would waste requests
+
+
 # -- listing cards ------------------------------------------------------
 def test_parse_listings_shape(source: ImmoweltSource) -> None:
     task = SearchTask(url="https://www.immowelt.de/suche/...", city="berlin")

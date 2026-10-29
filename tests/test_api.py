@@ -57,6 +57,8 @@ def _rate_limit_off(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     monkeypatch.setattr(registry, "_models_root", lambda: tmp_path)
+    # the synthetic model sees ~100 listings per city; offer them all
+    monkeypatch.setattr(api_main, "_min_city_rows", lambda: 1)
     result = train_model(_synthetic_df(), seed=1)
     registry.save(result.pipeline, metrics=result.metrics, metadata=result.metadata)
 
@@ -298,6 +300,10 @@ def test_model_endpoint(client: TestClient) -> None:
     assert body["feature_columns"]
     assert "holdout" in body["metrics"]
     assert set(body["cities"]) <= {"berlin", "hamburg", "leipzig"}
+    assert body["model_type"] == "xgboost"
+    assert body["model_label"] == "XGBoost"
+    assert body["selection_reason"]
+    assert sum(body["city_rows"].values()) == body["n_rows_total"]
 
 
 def test_stats_endpoint(client: TestClient) -> None:
@@ -317,6 +323,24 @@ def test_locations_grouped_per_city_from_real_data(client: TestClient) -> None:
     assert body["hamburg"]["districts"] == ["Nord"]
     assert body["hamburg"]["quarters"] == []
     assert body["leipzig"]["districts"] == ["Nord"]
+    assert body["berlin"]["name"] == "Berlin"
+
+
+def test_locations_lists_cities_by_size_with_display_names(client: TestClient) -> None:
+    body = client.get("/locations").json()
+    rows = client.get("/model").json()["city_rows"]
+    assert list(body) == sorted(rows, key=lambda c: -rows[c])
+
+
+def test_locations_hides_cities_the_model_barely_knows(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rows = client.get("/model").json()["city_rows"]
+    # a threshold between the smallest and the largest city's count
+    cutoff = max(rows.values())
+    monkeypatch.setattr(api_main, "_min_city_rows", lambda: cutoff)
+    body = client.get("/locations").json()
+    assert list(body) == [c for c, n in rows.items() if n >= cutoff]
 
 
 def test_locations_never_offer_the_city_as_its_own_district(client: TestClient) -> None:

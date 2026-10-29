@@ -25,6 +25,7 @@ from pathlib import Path
 
 from selectolax.parser import HTMLParser, Node
 
+from realestate.cities import CITIES
 from realestate.config import get_settings
 from realestate.data.features import is_city_name
 from realestate.scraper.base import Fetcher, LayoutChanged, Record, SearchTask
@@ -35,19 +36,14 @@ BASE_URL = "https://www.immowelt.de"
 SITEMAP_INDEX = f"{BASE_URL}/sitemaps/sitemap_index.xml"
 _POOL_PER_CITY = 80  # search URLs kept per city in the discovery cache
 
-# our canonical city slug -> the slug Immowelt uses in URLs (umlauts folded, no 'e')
-CITY_TO_IMMOWELT = {
-    "berlin": "berlin",
-    "muenchen": "munchen",
-    "hamburg": "hamburg",
-    "koeln": "koln",
-    "leipzig": "leipzig",
-}
+# our canonical city slug -> the slug Immowelt uses in URLs (see realestate.cities)
+CITY_TO_IMMOWELT = {c.slug: c.immowelt_slug for c in CITIES.values()}
 _IMMOWELT_TO_CITY = {v: k for k, v in CITY_TO_IMMOWELT.items()}
 
 _LOC_RE = re.compile(r"<loc>([^<]+)</loc>")
 _EXPOSE_RE = re.compile(r"/expose/([0-9a-f-]{36})")
-_CITY_SEG_RE = re.compile(r"/([a-z]+)-\d{4,5}/")
+# the city segment of a search URL, e.g. "/koln-50769/" or "/frankfurt-am-main-60308/"
+_CITY_SEG_RE = re.compile(r"/([a-z]+(?:-[a-z]+)*)-\d{4,5}/")
 _NUM_RE = re.compile(r"-?\d[\d.]*(?:,\d+)?")
 _MIN_CARDS_FOR_LAYOUT_CHECK = 5
 _KEYFACTS_RE = re.compile(r"\d\s*(?:Zimmer|m²)")
@@ -107,6 +103,14 @@ class ImmoweltSource:
             log.info("discovery cache is stale; rebuilding from sitemaps")
             return None
         pool = [(c, u) for c, u in data.get("urls", []) if c in self.cities]
+        # Caches from before this was recorded: the cities they have urls for.
+        built_for = set(data.get("cities") or {c for c, _ in data.get("urls", [])})
+        missing = set(self.cities) - built_for
+        if missing:
+            # a city was just added to RE_SCRAPE_CITIES: don't wait out the cache age.
+            # (One that was asked for but found no urls doesn't trigger this again.)
+            log.info("discovery cache was not built for %s; rebuilding", ", ".join(sorted(missing)))
+            return None
         if pool:
             log.info("discovery cache hit: %d urls (built %s)", len(pool), data["built_at"][:10])
         return pool or None
@@ -116,7 +120,11 @@ class ImmoweltSource:
             self._cache_path.parent.mkdir(parents=True, exist_ok=True)
             self._cache_path.write_text(
                 json.dumps(
-                    {"built_at": datetime.now(UTC).isoformat(), "urls": [list(p) for p in pool]}
+                    {
+                        "built_at": datetime.now(UTC).isoformat(),
+                        "cities": sorted(self.cities),
+                        "urls": [list(p) for p in pool],
+                    }
                 ),
                 "utf-8",
             )
@@ -160,6 +168,13 @@ class ImmoweltSource:
                 taken[slug] += 1
                 pool.append((_IMMOWELT_TO_CITY[slug], url))
         log.info("built discovery pool: %d urls across %d cities", len(pool), len(per_city))
+        for slug, n in sorted(per_city.items()):
+            if n == 0:
+                log.warning(
+                    "no search urls found for %s (immowelt slug %r) -- check realestate/cities.py",
+                    _IMMOWELT_TO_CITY[slug],
+                    slug,
+                )
         return pool
 
     # -- parsing ----------------------------------------------------------

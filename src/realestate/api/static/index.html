@@ -4,13 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Germany Real-Estate Price Predictor</title>
-<meta name="description" content="Get an instant price estimate for an apartment in Berlin, Hamburg, München, Köln or Leipzig from a model trained on real Immowelt listings.">
+<meta name="description" content="Get an instant price estimate for an apartment in Berlin, Hamburg, München, Köln and other big German cities from a model trained on real Immowelt listings.">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <!-- Link previews (LinkedIn, Slack, WhatsApp, X). Crawlers need absolute URLs. -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Germany Real-Estate Price Predictor">
 <meta property="og:title" content="Germany Real-Estate Price Predictor">
-<meta property="og:description" content="Get an instant price estimate for an apartment in Berlin, Hamburg, München, Köln or Leipzig from a model trained on real Immowelt listings.">
+<meta property="og:description" content="Get an instant price estimate for an apartment in Berlin, Hamburg, München, Köln and other big German cities from a model trained on real Immowelt listings.">
 <meta property="og:url" content="https://germany-real-estate.duckdns.org/">
 <meta property="og:image" content="https://germany-real-estate.duckdns.org/og-image.png">
 <meta property="og:image:type" content="image/png">
@@ -168,13 +168,15 @@
 
   <h1>🏠 Germany Real-Estate Price Predictor</h1>
   <p class="subtitle">
-    A portfolio project: an XGBoost model trained on apartment listings scraped
-    from Immowelt, served by a live API. Fill in a flat's details and get an
-    instant price estimate — no coding required.
+    A portfolio project: a machine-learning model trained on apartment listings
+    scraped from Immowelt and retrained every week, served by a live API. Fill
+    in a flat's details and get an instant price estimate — no coding required.
   </p>
 
   <div class="card">
     <label for="city">City</label>
+    <!-- fallback list; replaced from /locations, which offers each city once the
+         live model has learned from enough of its listings -->
     <select id="city">
       <option value="berlin">Berlin</option>
       <option value="hamburg">Hamburg</option>
@@ -291,9 +293,24 @@ function refreshLocationOptions() {
   fillSelect($('quarter'), loc?.quarters ?? []);
 }
 
+function fillCities(data) {
+  const select = $('city');
+  const previous = select.value;
+  const slugs = Object.keys(data);
+  if (!slugs.length) return; // keep the fallback list
+  select.innerHTML = '';
+  for (const slug of slugs) {
+    const el = document.createElement('option');
+    el.value = slug;
+    el.textContent = data[slug].name ?? slug;
+    select.appendChild(el);
+  }
+  if (slugs.includes(previous)) select.value = previous;
+}
+
 fetch('/locations')
   .then((r) => (r.ok ? r.json() : {}))
-  .then((data) => { locationsByCity = data; refreshLocationOptions(); })
+  .then((data) => { locationsByCity = data; fillCities(data); refreshLocationOptions(); })
   .catch(() => { /* dropdowns just stay at "— any —" */ });
 
 $('city').addEventListener('change', refreshLocationOptions);

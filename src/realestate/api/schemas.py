@@ -27,6 +27,7 @@ class PredictRequest(BaseModel):
 
 
 class CityLocations(BaseModel):
+    name: str = Field(description="Display name, e.g. 'Köln' for city 'koeln'.")
     districts: list[str]
     quarters: list[str]
 
@@ -56,6 +57,14 @@ class ModelInfoResponse(BaseModel):
     n_rows_total: int | None
     feature_columns: list[str]
     cities: list[str]
+    city_rows: dict[str, int] = Field(
+        default_factory=dict, description="Listings per city the model learned from."
+    )
+    model_type: str | None = None
+    model_label: str | None = Field(
+        default=None, description="Model family, chosen automatically at each retrain."
+    )
+    selection_reason: str | None = None
     metrics: dict
 
 

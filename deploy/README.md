@@ -134,12 +134,26 @@ systemctl start realestate-train.service    # once the DB has >= RE_MIN_TRAIN_RO
   (from that directory, so it picks up `.env`) prints one line per run (gap since the previous run, delay, OK requests
   before the first block, minutes in) to compare what blocks correlate with.
   The scrape email also names the first block. The discovery cache lives at
-  `data/immowelt_search_urls.json`; delete it to force a rebuild.
-- **Retrain** — VPS, `Sat 04:00`. `realestate-train` refuses if the DB has
+  `data/immowelt_search_urls.json`; delete it to force a rebuild. It also
+  rebuilds by itself when `RE_SCRAPE_CITIES` gains a city it wasn't built for.
+  **Adding a city:** if it isn't in `src/realestate/cities.py` yet, add it
+  there (display name + the slug Immowelt uses in its search URLs, checked
+  against a real sitemap URL); then append its slug to `RE_SCRAPE_CITIES` in
+  `/opt/realestate/.env`. An unknown slug fails at startup rather than
+  silently scraping nothing. The city is scraped and trained on from the
+  next run, and appears on the demo page once the live model has learned
+  from `RE_MIN_CITY_ROWS` (150) of its listings. Scope history: 5 cities
+  → 10 (Frankfurt, Stuttgart, Düsseldorf, Dresden, Hannover) on 2026-10-29,
+  pages per city unchanged, after four clean runs at 120-240s.
+- **Retrain** — VPS, `Sat 04:00`. It first cross-validates every model type in
+  `RE_TRAIN_CANDIDATES` and keeps the live type unless another is at least
+  `RE_TRAIN_SWITCH_MARGIN_PTS` better city-only (MODEL_CARD.md, "Model
+  selection"); the email carries the comparison table and says when the type
+  switched. `realestate-train` refuses if the DB has
   `< RE_MIN_TRAIN_ROWS` usable rows or the latest scrape run didn't succeed
   (`blocked` status). A block that hits *after* real listings already landed is
   recorded as `partial`, which still counts as retrain-eligible. It also refuses
-  to deploy a model whose hold-out median error is more than
+  to deploy a model whose hold-out median error (as scraped or city-only) is more than
   `RE_MAX_ERROR_REGRESSION_PTS` (default 3) points worse than the live one's:
   the live model stays and the email says why. If the regression is expected
   (new city, feature change), deploy it anyway with

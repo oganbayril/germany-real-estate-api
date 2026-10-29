@@ -23,7 +23,7 @@ from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from selectolax.parser import HTMLParser, Node
+from selectolax.lexbor import LexborHTMLParser, LexborNode
 
 from realestate.cities import CITIES
 from realestate.config import get_settings
@@ -179,7 +179,7 @@ class ImmoweltSource:
 
     # -- parsing ----------------------------------------------------------
     def parse_listings(self, html: str, task: SearchTask) -> list[Record]:
-        tree = HTMLParser(html)
+        tree = LexborHTMLParser(html)
         records: dict[str, Record] = {}
         cards = tree.css("[data-testid='serp-core-classified-card-testid']")
         for card in cards:
@@ -199,7 +199,7 @@ class ImmoweltSource:
 # --------------------------------------------------------------------------
 # card parsing
 # --------------------------------------------------------------------------
-def _card_record(card: Node, city: str) -> Record | None:
+def _card_record(card: LexborNode, city: str) -> Record | None:
     link = card.css_first("a[href*='/expose/']")
     match = _EXPOSE_RE.search(link.attributes.get("href") or "") if link else None
     if match is None:
@@ -240,14 +240,14 @@ def _card_record(card: Node, city: str) -> Record | None:
     }
 
 
-def _tid_text(node: Node, testid: str) -> str | None:
+def _tid_text(node: LexborNode, testid: str) -> str | None:
     found = node.css_first(f"[data-testid='{testid}']")
     if found is None:
         return None
     return re.sub(r"\s+", " ", found.text(separator=" ", strip=True)) or None
 
 
-def _keyfacts_text(card: Node) -> str | None:
+def _keyfacts_text(card: LexborNode) -> str | None:
     """The "3 Zimmer · 63 m² · 3. Geschoss" line.
 
     Until Oct 2026 it had its own testid; now it's an unlabeled div (hashed CSS
@@ -269,7 +269,7 @@ def _keyfacts_text(card: Node) -> str | None:
     return None
 
 
-def _price(card: Node) -> float | None:
+def _price(card: LexborNode) -> float | None:
     node = card.css_first("[data-testid='cardmfe-price-testid']")
     if node is None:
         return None

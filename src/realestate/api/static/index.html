@@ -152,6 +152,12 @@
     border-top: 1px solid var(--border);
     padding-top: 12px;
   }
+  .req { color: var(--error); }
+  input.invalid, select.invalid { border-color: var(--error); box-shadow: 0 0 0 1px var(--error); }
+  /* the first invalid field gets focus; keep it red instead of the default ring */
+  input.invalid:focus, select.invalid:focus { outline: 2px solid var(--error); outline-offset: 1px; }
+  .field-error { color: var(--error); font-size: 0.8rem; margin-top: 5px; }
+  .field-error:empty { display: none; }
   #error { display: none; color: var(--error); font-size: 0.9rem; margin-top: 14px; }
   #error.show { display: block; }
   footer { text-align: center; color: var(--muted); font-size: 0.8rem; line-height: 1.8; }
@@ -187,19 +193,25 @@
 
     <div class="row">
       <div>
-        <label for="area">Living area (m²) <span class="hint">15-400</span></label>
-        <input id="area" type="number" min="15" max="400" step="1" value="75">
+        <label for="area">Living area (m²) <span class="req" aria-hidden="true">*</span> <span class="hint">15-400</span></label>
+        <input id="area" type="number" min="15" max="400" step="1" placeholder="e.g. 75"
+               required aria-required="true" aria-describedby="area-err">
+        <div class="field-error" id="area-err" role="alert"></div>
       </div>
       <div>
-        <label for="rooms">Rooms <span class="hint">1-12</span></label>
-        <input id="rooms" type="number" min="1" max="12" step="0.5" value="3">
+        <label for="rooms">Rooms <span class="req" aria-hidden="true">*</span> <span class="hint">1-12</span></label>
+        <input id="rooms" type="number" min="1" max="12" step="0.5" placeholder="e.g. 3"
+               required aria-required="true" aria-describedby="rooms-err">
+        <div class="field-error" id="rooms-err" role="alert"></div>
       </div>
     </div>
 
     <div class="row">
       <div>
         <label for="floor">Floor <span class="hint">(optional, 0-40)</span></label>
-        <input id="floor" type="number" min="0" max="40" step="1" placeholder="e.g. 2">
+        <input id="floor" type="number" min="0" max="40" step="1" placeholder="e.g. 2"
+               aria-describedby="floor-err">
+        <div class="field-error" id="floor-err" role="alert"></div>
       </div>
       <div>
         <label for="energy">Energy class <span class="hint">(optional)</span></label>
@@ -315,7 +327,93 @@ fetch('/locations')
 
 $('city').addEventListener('change', refreshLocationOptions);
 
+// The API's field names, as a visitor would read them -- so an error says
+// "Living area must be at least 15 m²", not "living_area_sqm: Input should be...".
+const FIELDS = {
+  city: { input: 'city', label: 'City', unit: '' },
+  living_area_sqm: { input: 'area', label: 'Living area', unit: ' m²', missing: 'Please enter the living area.' },
+  rooms: { input: 'rooms', label: 'Rooms', unit: '', missing: 'Please enter the number of rooms.' },
+  floor: { input: 'floor', label: 'Floor', unit: '' },
+  energy_efficiency_class: { input: 'energy', label: 'Energy class', unit: '' },
+  district: { input: 'district', label: 'District', unit: '' },
+  quarter: { input: 'quarter', label: 'Quarter', unit: '' },
+};
+const BY_INPUT = Object.fromEntries(Object.values(FIELDS).map((f) => [f.input, f]));
+
+function showFieldError(inputId, message) {
+  const input = $(inputId);
+  input.classList.add('invalid');
+  input.setAttribute('aria-invalid', 'true');
+  const slot = document.getElementById(inputId + '-err');
+  if (slot) slot.textContent = message;
+}
+
+function clearFieldError(inputId) {
+  const input = $(inputId);
+  input.classList.remove('invalid');
+  input.removeAttribute('aria-invalid');
+  const slot = document.getElementById(inputId + '-err');
+  if (slot) slot.textContent = '';
+}
+
+function rangeMessage(field, value, min, max) {
+  if (value < min) return field.label + ' must be at least ' + min + field.unit + '.';
+  if (value > max) return field.label + ' must be at most ' + max + field.unit + '.';
+  return null;
+}
+
+// Checked before anything is sent: required fields filled, numbers in range.
+// Returns true when the form is fine; otherwise marks the fields and focuses
+// the first one.
+function checkForm() {
+  let firstBad = null;
+  for (const id of ['area', 'rooms', 'floor']) {
+    clearFieldError(id);
+    const input = $(id);
+    const field = BY_INPUT[id];
+    let message = null;
+    if (input.value.trim() === '') {
+      if (input.required) message = field.missing;
+    } else if (!Number.isFinite(Number(input.value))) {
+      message = 'Please enter a number.';
+    } else {
+      message = rangeMessage(field, Number(input.value), Number(input.min), Number(input.max));
+    }
+    if (message) {
+      showFieldError(id, message);
+      firstBad = firstBad || input;
+    }
+  }
+  if (firstBad) firstBad.focus();
+  return firstBad === null;
+}
+
+// A 422 from the API means its own validation caught something the form
+// didn't; turn each error into the same kind of message, on its field.
+function friendlyApiError(err) {
+  const key = err.loc?.[err.loc.length - 1];
+  const field = FIELDS[key];
+  const label = field?.label ?? 'One of the values';
+  const unit = field?.unit ?? '';
+  let message;
+  if (err.type === 'greater_than_equal') message = label + ' must be at least ' + err.ctx?.ge + unit + '.';
+  else if (err.type === 'less_than_equal') message = label + ' must be at most ' + err.ctx?.le + unit + '.';
+  else if (err.type === 'missing') message = field?.missing ?? label + ' is required.';
+  else message = label + ': please check this value.';
+  return { input: field?.input, message };
+}
+
+for (const id of ['area', 'rooms', 'floor']) {
+  $(id).addEventListener('input', () => clearFieldError(id));
+}
+
 $('go').addEventListener('click', async () => {
+  $('error').classList.remove('show');
+  if (!checkForm()) {
+    $('result').classList.remove('show');
+    return;
+  }
+
   const body = {
     city: $('city').value,
     living_area_sqm: Number($('area').value),
@@ -342,10 +440,10 @@ $('go').addEventListener('click', async () => {
     if (resp.status === 429) throw new Error('Too many requests — please wait a moment and try again.');
     if (resp.status === 422) {
       const detail = await resp.json();
-      const first = detail.detail?.[0];
-      const field = first?.loc?.[first.loc.length - 1];
+      const errors = (detail.detail ?? []).map(friendlyApiError);
+      for (const e of errors) if (e.input) showFieldError(e.input, e.message);
       throw new Error(
-        first ? `${field}: ${first.msg}` : 'Please check the values you entered.'
+        errors.length ? errors.map((e) => e.message).join(' ') : 'Please check the values you entered.'
       );
     }
     if (!resp.ok) throw new Error('Something went wrong (HTTP ' + resp.status + ').');

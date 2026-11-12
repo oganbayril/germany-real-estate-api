@@ -107,7 +107,7 @@ systemctl start realestate-train.service    # once the DB has >= RE_MIN_TRAIN_RO
 
 - **Scrape** — VPS timer, `Mon,Thu 03:00` + up to 6h jitter, `Persistent=true`
   (catches up a missed run on next boot/enable). Deliberately gentle:
-  `RE_SCRAPE_MAX_SEARCH_URLS_PER_CITY=5`, `RE_SCRAPE_DELAY_MIN_S=120` /
+  `RE_SCRAPE_MAX_SEARCH_URLS_PER_CITY=7`, `RE_SCRAPE_DELAY_MIN_S=120` /
   `_MAX_S=240`, and the sitemap-derived URL pool is cached for
   `RE_SCRAPE_DISCOVERY_CACHE_DAYS` (14) so a routine run is up to ~25 real
   requests, skipping the sitemap walk entirely. Delay history: 25-45s
@@ -132,7 +132,9 @@ systemctl start realestate-train.service    # once the DB has >= RE_MIN_TRAIN_RO
   next run, and appears on the demo page once the live model has learned
   from `RE_MIN_CITY_ROWS` (150) of its listings. Scope history: 5 cities
   → 10 (Frankfurt, Stuttgart, Düsseldorf, Dresden, Hannover) on 2026-10-29,
-  pages per city unchanged, after four clean runs at 120-240s.
+  pages per city unchanged, after four clean runs at 120-240s. Pages per city
+  5 → 7 on 2026-11-13 after four clean 10-city runs, to bring the slow new
+  cities (Düsseldorf, Hannover: ~10-20 new listings a run) to 150 sooner.
 - **Retrain** — VPS, `Sat 04:00`. It first cross-validates every model type in
   `RE_TRAIN_CANDIDATES` and keeps the live type unless another is at least
   `RE_TRAIN_SWITCH_MARGIN_PTS` better city-only (MODEL_CARD.md, "Model

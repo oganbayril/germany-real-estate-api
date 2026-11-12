@@ -152,11 +152,10 @@
     border-top: 1px solid var(--border);
     padding-top: 12px;
   }
-  .req { color: var(--error); }
   input.invalid, select.invalid { border-color: var(--error); box-shadow: 0 0 0 1px var(--error); }
-  /* the first invalid field gets focus; keep it red instead of the default ring */
+  /* clicking into a field that's still wrong keeps it red, not the default ring */
   input.invalid:focus, select.invalid:focus { outline: 2px solid var(--error); outline-offset: 1px; }
-  .field-error { color: var(--error); font-size: 0.8rem; margin-top: 5px; }
+  .field-error { color: var(--error); font-size: 0.8rem; line-height: 1.35; margin: 6px 0 10px; }
   .field-error:empty { display: none; }
   #error { display: none; color: var(--error); font-size: 0.9rem; margin-top: 14px; }
   #error.show { display: block; }
@@ -193,13 +192,13 @@
 
     <div class="row">
       <div>
-        <label for="area">Living area (m²) <span class="req" aria-hidden="true">*</span> <span class="hint">15-400</span></label>
+        <label for="area">Living area (m²) <span class="hint">15-400</span></label>
         <input id="area" type="number" min="15" max="400" step="1" placeholder="e.g. 75"
                required aria-required="true" aria-describedby="area-err">
         <div class="field-error" id="area-err" role="alert"></div>
       </div>
       <div>
-        <label for="rooms">Rooms <span class="req" aria-hidden="true">*</span> <span class="hint">1-12</span></label>
+        <label for="rooms">Rooms <span class="hint">1-12</span></label>
         <input id="rooms" type="number" min="1" max="12" step="0.5" placeholder="e.g. 3"
                required aria-required="true" aria-describedby="rooms-err">
         <div class="field-error" id="rooms-err" role="alert"></div>
@@ -363,10 +362,10 @@ function rangeMessage(field, value, min, max) {
 }
 
 // Checked before anything is sent: required fields filled, numbers in range.
-// Returns true when the form is fine; otherwise marks the fields and focuses
-// the first one.
+// Returns true when the form is fine; otherwise marks the fields (the cursor
+// stays where the visitor left it).
 function checkForm() {
-  let firstBad = null;
+  let ok = true;
   for (const id of ['area', 'rooms', 'floor']) {
     clearFieldError(id);
     const input = $(id);
@@ -381,11 +380,10 @@ function checkForm() {
     }
     if (message) {
       showFieldError(id, message);
-      firstBad = firstBad || input;
+      ok = false;
     }
   }
-  if (firstBad) firstBad.focus();
-  return firstBad === null;
+  return ok;
 }
 
 // A 422 from the API means its own validation caught something the form

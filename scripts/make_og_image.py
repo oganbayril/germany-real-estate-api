@@ -79,7 +79,7 @@ FIT_JS = """
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--url", default="https://germany-real-estate.duckdns.org/")
+    parser.add_argument("--url", default="https://germany-real-estate.oganbayril.com/")
     parser.add_argument("--out", type=Path, default=OUT)
     args = parser.parse_args()
 

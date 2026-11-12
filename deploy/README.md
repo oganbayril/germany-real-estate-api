@@ -25,9 +25,9 @@ blocked" below — but aren't the default anymore.
 
 ## Prerequisites
 
-1. A hostname pointed at the box. Free option: register a subdomain at
-   <https://duckdns.org>, set its IP to the server's, e.g.
-   `germany-real-estate.duckdns.org`.
+1. A hostname pointed at the box: a Cloudflare A record for
+   `germany-real-estate.oganbayril.com`, DNS only (not proxied), so Caddy can
+   get the certificate itself. (Until 2026-11-13 the site was on DuckDNS.)
 2. Firewall: allow `22`, `80`, `443` only (`ufw allow OpenSSH && ufw allow 80,443/tcp && ufw enable`).
 
 ## First install
@@ -46,52 +46,40 @@ installs this site into Caddy (see "Caddy layout" below).
 ### Caddy layout (shared box)
 
 Other projects run on the same VPS, each with its own Caddy site, so this repo
-owns **one file** and never the whole config:
+owns **one file** and never the whole config. The box is set up with
+vps-infra (a private repo), whose
+`bootstrap.sh` owns the main Caddyfile:
 
 ```
-/etc/caddy/Caddyfile                       import sites-enabled/*
+/etc/caddy/Caddyfile                       import sites-enabled/*.conf   (vps-infra)
 /etc/caddy/sites-enabled/realestate.conf   this site (from deploy/Caddyfile)
 /etc/caddy/sites-enabled/<other>.conf      other projects' sites, never touched
-/etc/caddy/backups/                        backups made by the install script
 ```
 
-`deploy/install-caddy-site.sh <domain>` (run by `setup.sh`, safe to re-run):
+`setup.sh` installs the site with vps-infra's `add-site` (from the PATH, or
+`/root/vps-infra/bin/add-site.sh`; it stops if neither exists):
+`add-site realestate deploy/Caddyfile "$RE_PUBLIC_DOMAIN"`. `add-site` writes
+only `realestate.conf`, pre-creates `/var/log/caddy/realestate.log` owned by
+`caddy`, runs `caddy validate` **as the caddy user** (as root it would create a
+root-owned log the running Caddy cannot open), refuses if any other site would
+disappear, **reloads** (never restarts: a restart with a config that cannot load
+stops every site on the box) and puts the previous file back on any failure.
 
-- stops, changing nothing, if another file in `sites-enabled/` already defines
-  the same domain (Caddy refuses duplicate sites);
-- if the main `Caddyfile` does not contain `import sites-enabled/*` (e.g. the
-  default one apt installs), backs it up to `/etc/caddy/backups/` and writes the
-  import-only version; if it does, leaves it alone;
-- writes `sites-enabled/realestate.conf`; if nothing changed, does nothing more;
-- makes sure `/var/log/caddy/realestate.log` exists, owned by `caddy`, mode 600,
-  and runs `caddy validate` **as the caddy user**; on failure restores the
-  previous files (and removes the log if it created it) and does not reload;
-- if Caddy is running, reloads it; a failed reload restores the previous files
-  and stops. It **never restarts** Caddy: a restart with a config that cannot
-  load would stop Caddy and every site on the box, while a failed reload keeps
-  the previous config running. If Caddy is not running (first install), it is
-  started.
+Moving the site to a new domain: set `RE_PUBLIC_DOMAIN` in `.env`, then
+`add-site --replace-host OLD_DOMAIN realestate deploy/Caddyfile NEW_DOMAIN`
+(vps-infra RUNBOOK section 8). Re-running `setup.sh` with a changed domain stops
+at `add-site`, because the old host would disappear.
 
-Backups go to `/etc/caddy/backups/`, not `sites-enabled/`: everything in
-`sites-enabled/` is loaded, so a backup there would define the site twice.
-
-Why validate as `caddy`, not root: validating opens the configured log files.
-As root it would create a missing log owned by root, which the running Caddy
-(user `caddy`) cannot open, so the reload would fail. (This happened when
-another site was added to this box; see the food-housing-spending-share
-deploy notes.) If a log exists but is not owned by `caddy`, the script stops
-before changing anything.
-
-To test changes to the script without Caddy or root:
-`CADDY_DIR=/tmp/caddy-test NO_RELOAD=1 bash deploy/install-caddy-site.sh example.org`
-(generation only), and `bash deploy/tests/test_install_caddy_site.sh` for the
-failure paths (fake `caddy` / `runuser` / `systemctl`, 32 checks).
+This repo had its own installer (`deploy/install-caddy-site.sh`) until
+2026-11-13; it checked for `import sites-enabled/*` while the box uses
+`import sites-enabled/*.conf`, so a re-run would have rewritten the shared main
+Caddyfile. It is in git history.
 
 Then, by hand:
 
 ```bash
 sudoedit /opt/realestate/.env               # set RE_PUBLIC_DOMAIN, RE_SMTP_PASSWORD
-systemctl restart realestate-api caddy
+systemctl restart realestate-api            # never restart caddy: other sites share it
 curl -s https://<domain>/health
 ```
 

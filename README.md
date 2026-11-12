@@ -8,9 +8,9 @@ Portfolio project demonstrating a full ML deployment: periodic data collection,
 a trained regression model, and a served prediction API — deployed on a Hetzner
 VPS with plain systemd, native Postgres, Caddy/TLS.
 
-**Live:** <https://germany-real-estate.duckdns.org> — a no-code demo page (fill
+**Live:** <https://germany-real-estate.oganbayril.com> — a no-code demo page (fill
 in a flat's details, get a price). Also `/docs`, `/predict`, `/model`, `/stats`.
-See [/model-card](https://germany-real-estate.duckdns.org/model-card) for a
+See [/model-card](https://germany-real-estate.oganbayril.com/model-card) for a
 plain-language summary, or [MODEL_CARD.md](MODEL_CARD.md) for the technical one.
 
 The scraper collects listings gently (5 search URLs/city, 120-240s between
@@ -142,7 +142,7 @@ is refit on every row.
 through the same `build_feature_frame`.
 
 The model retrains weekly, so live numbers (row count, hold-out error) are on
-[/model-card](https://germany-real-estate.duckdns.org/model-card) rather than
+[/model-card](https://germany-real-estate.oganbayril.com/model-card) rather than
 here. As of mid-October 2026: ~1,200 listings across 5 cities, half of
 predictions within ~15% of the asking price. Features are thin by design
 (card-only), so more data and richer features are the obvious next gains.

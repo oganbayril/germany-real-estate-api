@@ -80,8 +80,22 @@ systemctl enable --now realestate-scrape.timer realestate-train.timer realestate
 systemctl enable --now realestate-api.service \
   || echo "  !! api did not start -- inspect: journalctl -u realestate-api -xe   (setup continues)"
 
-echo "==> caddy (this site's file only; other sites on the box are left alone)"
-bash "$APP_DIR/deploy/install-caddy-site.sh" "$RE_PUBLIC_DOMAIN"
+echo "==> caddy (this site's file only, through vps-infra's add-site)"
+# add-site writes only sites-enabled/realestate.conf, validates as caddy, checks
+# that every other site stays served, reloads (never restarts), and puts the old
+# file back on any failure. It never touches the main Caddyfile.
+# Moving to a new domain: run add-site by hand with --replace-host OLD (vps-infra
+# RUNBOOK section 8); re-running setup.sh with a changed domain stops there.
+add_site="$(command -v add-site || true)"
+if [[ -z $add_site && -f /root/vps-infra/bin/add-site.sh ]]; then
+  add_site=/root/vps-infra/bin/add-site.sh
+fi
+if [[ -z $add_site ]]; then
+  echo "!! vps-infra's add-site not found (PATH or /root/vps-infra/bin/add-site.sh)." >&2
+  echo "!! Set up the box with vps-infra first; the Caddy site was NOT installed." >&2
+  exit 1
+fi
+bash "$add_site" realestate "$APP_DIR/deploy/Caddyfile" "$RE_PUBLIC_DOMAIN"
 
 cat <<EOF
 

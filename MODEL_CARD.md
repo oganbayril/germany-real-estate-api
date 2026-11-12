@@ -4,13 +4,13 @@
 
 Given a few attributes of a German apartment listing, it predicts the **asking
 price in euros**. Served at `POST /predict` on
-<https://germany-real-estate.duckdns.org>.
+<https://germany-real-estate.oganbayril.com>.
 
 - **Type:** a regressor on `ln(price)`, chosen automatically at each weekly
   retrain from four model types (see [Model selection](#model-selection)) and
   wrapped in an sklearn `Pipeline` with an `OrdinalEncoder` for the categorical
   location columns. Predictions are exponentiated back to euros. The live type
-  is `model_label` in [/model](https://germany-real-estate.duckdns.org/model);
+  is `model_label` in [/model](https://germany-real-estate.oganbayril.com/model);
   until the first automatic selection it was always XGBoost.
 - **Inputs:** `city`, `living_area_sqm` (required); `rooms`, `floor`,
   `postal_code`, `district`, `quarter`, `energy_efficiency_class` (optional).
@@ -28,8 +28,8 @@ bot wall). Fields therefore come from the results cards only.
 - **Target:** the listed **asking** price, not a transaction price.
 - **Size:** grows with every scrape. The model retrains weekly on everything
   collected so far; the live row count is on
-  [/model-card](https://germany-real-estate.duckdns.org/model-card) (plain
-  language) and [/model](https://germany-real-estate.duckdns.org/model) (JSON).
+  [/model-card](https://germany-real-estate.oganbayril.com/model-card) (plain
+  language) and [/model](https://germany-real-estate.oganbayril.com/model) (JSON).
 - **Bootstrap:** a fresh deployment with an empty database (fewer than
   `RE_MIN_TRAIN_ROWS`, default 200) trains on the bundled
   `sample/listings_sample.csv` (180 rows, Berlin only) until enough real data
@@ -46,7 +46,7 @@ exponentiated back from log price):
 Metrics: median absolute % error, MAPE, MAE, RMSE, median absolute error, and
 R² on both log and euro scale. They are saved with every artifact
 (`models/<timestamp>/metrics.json`) and served live at
-[/model](https://germany-real-estate.duckdns.org/model), and the hold-out
+[/model](https://germany-real-estate.oganbayril.com/model), and the hold-out
 median % error is what `/predict` returns as `typical_error_pct` (the
 city-only one, below, for requests without location detail). They aren't
 copied here because the model retrains every week and this file would go stale.

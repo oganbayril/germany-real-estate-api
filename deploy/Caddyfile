@@ -1,12 +1,13 @@
 # Reverse proxy + automatic HTTPS for the real-estate API.
-# install-caddy-site.sh (run by setup.sh) writes this to
-# /etc/caddy/sites-enabled/realestate.conf, with the site address below set to
-# $RE_PUBLIC_DOMAIN. Caddy obtains and renews the TLS certificate itself.
+# setup.sh installs this as /etc/caddy/sites-enabled/realestate.conf through
+# vps-infra's add-site, which puts $RE_PUBLIC_DOMAIN in as the site address:
+#   add-site realestate deploy/Caddyfile germany-real-estate.oganbayril.com
+# Caddy obtains and renews the TLS certificate itself.
 #
 # Rate limiting lives in the app (slowapi), so this needs only the stock Caddy
 # binary -- no plugins.
 
-REALESTATE_DOMAIN {
+__DOMAIN__ {
 	encode zstd gzip
 
 	# The API never accepts a body larger than a small JSON object.

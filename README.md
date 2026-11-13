@@ -13,11 +13,12 @@ in a flat's details, get a price). Also `/docs`, `/predict`, `/model`, `/stats`.
 See [/model-card](https://germany-real-estate.oganbayril.com/model-card) for a
 plain-language summary, or [MODEL_CARD.md](MODEL_CARD.md) for the technical one.
 
-The scraper collects listings gently (5 search URLs/city, 120-240s between
-requests, a 2-week URL-discovery cache) since Immowelt's DataDome bot-protection
-still throttles it partway through most runs even at a slower pace; the model
-retrains automatically once enough real data has accumulated, otherwise it
-serves a bundled 180-row sample bootstrap.
+The scraper collects listings gently (7 search pages per city across 10 cities,
+120-240s between requests, a 2-week URL-discovery cache). Immowelt's DataDome
+bot-protection cut most runs short at faster paces; at this one, every run since
+mid-October has finished without a block. The model retrains automatically once
+enough real data has accumulated, otherwise it serves a bundled 180-row sample
+bootstrap.
 
 ```mermaid
 flowchart LR
@@ -93,9 +94,9 @@ supplied by `realestate.config` (env `RE_DATABASE_URL`), not `alembic.ini`.
 ## Scraping policy
 
 The scraper is the primary data source, run periodically via a systemd timer.
-It is deliberately low-volume and non-evasive: single-threaded, ~8-15s jittered
-delay, honest descriptive User-Agent, respects `robots.txt`, scoped to ~5 cities,
-no proxy rotation or browser emulation. Listing URLs come from Immowelt's own
+It is deliberately low-volume and non-evasive: single-threaded, 120-240s jittered
+delay, two runs a week, honest descriptive User-Agent, respects `robots.txt`,
+scoped to 10 cities, no proxy rotation or browser emulation. Listing URLs come from Immowelt's own
 published XML sitemaps rather than from reverse-engineering its internal API.
 Raw scraped data and DB dumps are never committed; the repo ships code plus a
 small sanitized sample fixture only.
@@ -143,9 +144,11 @@ through the same `build_feature_frame`.
 
 The model retrains weekly, so live numbers (row count, hold-out error) are on
 [/model-card](https://germany-real-estate.oganbayril.com/model-card) rather than
-here. As of mid-October 2026: ~1,200 listings across 5 cities, half of
-predictions within ~15% of the asking price. Features are thin by design
-(card-only), so more data and richer features are the obvious next gains.
+here. As of the 7 November 2026 retrain: ~3,000 listings across 10 cities (the
+five added in late October are offered on the demo page once the model has 150
+of their listings), half of predictions within ~16% of the asking price, or
+~19% from the city alone. Features are thin by design (card-only), so more data
+and richer features are the obvious next gains.
 
 ## API
 
